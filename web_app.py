@@ -12,7 +12,7 @@ import webbrowser
 from typing import List
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -129,15 +129,17 @@ async def check_status():
 # ============================================================================
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
-    """Start a new agent task."""
+async def chat(request: ChatRequest):
+    """Start a new agent task (async version)."""
+    import asyncio
+    
     task_id, error = start_task(request.task)
     
     if error:
         return {"status": "error", "message": error}
     
-    # Run task in background
-    background_tasks.add_task(run_agent_task, request.task, task_id)
+    # Run task as async background task (non-blocking)
+    asyncio.create_task(run_agent_task(request.task, task_id))
     return {"status": "accepted", "task_id": task_id}
 
 
