@@ -107,3 +107,67 @@ def _create_fallback_screenshot(is_sensitive: bool) -> Screenshot:
         height=default_height,
         is_sensitive=is_sensitive,
     )
+
+
+# =============================================================================
+# Async Screenshot
+# =============================================================================
+
+async def async_get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screenshot:
+    """
+    Capture a screenshot asynchronously from the connected Android device.
+
+    Args:
+        device_id: Optional ADB device ID for multi-device setups.
+        timeout: Timeout in seconds for screenshot operations.
+
+    Returns:
+        Screenshot object containing base64 data and dimensions.
+    """
+    import asyncio
+    
+    temp_path = os.path.join(tempfile.gettempdir(), f"screenshot_{uuid.uuid4()}.png")
+    adb_prefix = _get_adb_prefix(device_id)
+
+    try:
+        # Execute screenshot command
+        proc = await asyncio.create_subprocess_exec(
+            *adb_prefix, "shell", "screencap", "-p", "/sdcard/tmp.png",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        
+        output = (stdout + stderr).decode('utf-8', errors='ignore')
+        if "Status: -1" in output or "Failed" in output:
+            return _create_fallback_screenshot(is_sensitive=True)
+
+        # Pull screenshot
+        proc = await asyncio.create_subprocess_exec(
+            *adb_prefix, "pull", "/sdcard/tmp.png", temp_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=5)
+
+        if not os.path.exists(temp_path):
+            return _create_fallback_screenshot(is_sensitive=False)
+
+        # Read and encode image (sync, file I/O is fast)
+        img = Image.open(temp_path)
+        width, height = img.size
+
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        base64_data = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+        os.remove(temp_path)
+
+        return Screenshot(
+            base64_data=base64_data, width=width, height=height, is_sensitive=False
+        )
+
+    except Exception as e:
+        print(f"Async screenshot error: {e}")
+        return _create_fallback_screenshot(is_sensitive=False)
+
