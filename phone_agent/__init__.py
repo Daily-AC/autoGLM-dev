@@ -18,6 +18,15 @@ from phone_agent.exceptions import (
     ActionError,
     ActionParseError,
     TaskCancelledError,
+    is_retryable,
+)
+from phone_agent.retry import (
+    retry_sync,
+    retry_async,
+    with_retry,
+    ADBConnectionManager,
+    CircuitBreaker,
+    RetryConfig,
 )
 
 __version__ = "0.1.0"
@@ -28,6 +37,14 @@ __all__ = [
     "CancellationToken",
     "AsyncCancellationToken",
     "TaskCancelledException",
+    # Retry & Recovery
+    "retry_sync",
+    "retry_async",
+    "with_retry",
+    "ADBConnectionManager",
+    "CircuitBreaker",
+    "RetryConfig",
+    "is_retryable",
     # Logging
     "get_logger",
     "set_global_queue",
@@ -45,3 +62,4 @@ __all__ = [
     "ActionParseError",
     "TaskCancelledError",
 ]
+
