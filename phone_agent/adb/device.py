@@ -245,3 +245,145 @@ def _get_adb_prefix(device_id: str | None) -> list:
     if device_id:
         return ["adb", "-s", device_id]
     return ["adb"]
+
+
+# =============================================================================
+# Async ADB Operations
+# =============================================================================
+
+async def _async_run_adb(args: list, delay: float = 0.0) -> subprocess.CompletedProcess:
+    """Run ADB command asynchronously."""
+    import asyncio
+    
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    )
+    await proc.wait()
+    
+    if delay > 0:
+        await asyncio.sleep(delay)
+    
+    return proc
+
+
+async def async_tap(x: int, y: int, device_id: str | None = None, delay: float = 1.0) -> None:
+    """
+    Tap at the specified coordinates asynchronously.
+
+    Args:
+        x: X coordinate.
+        y: Y coordinate.
+        device_id: Optional ADB device ID.
+        delay: Delay in seconds after tap.
+    """
+    adb_prefix = _get_adb_prefix(device_id)
+    cmd = adb_prefix + ["shell", "input", "tap", str(x), str(y)]
+    await _async_run_adb(cmd, delay)
+
+
+async def async_double_tap(
+    x: int, y: int, device_id: str | None = None, delay: float = 1.0
+) -> None:
+    """Double tap at the specified coordinates asynchronously."""
+    import asyncio
+    adb_prefix = _get_adb_prefix(device_id)
+    cmd = adb_prefix + ["shell", "input", "tap", str(x), str(y)]
+    
+    await _async_run_adb(cmd)
+    await asyncio.sleep(0.1)
+    await _async_run_adb(cmd, delay)
+
+
+async def async_long_press(
+    x: int,
+    y: int,
+    duration_ms: int = 3000,
+    device_id: str | None = None,
+    delay: float = 1.0,
+) -> None:
+    """Long press at the specified coordinates asynchronously."""
+    adb_prefix = _get_adb_prefix(device_id)
+    cmd = adb_prefix + ["shell", "input", "swipe", str(x), str(y), str(x), str(y), str(duration_ms)]
+    await _async_run_adb(cmd, delay)
+
+
+async def async_swipe(
+    start_x: int,
+    start_y: int,
+    end_x: int,
+    end_y: int,
+    duration_ms: int | None = None,
+    device_id: str | None = None,
+    delay: float = 1.0,
+) -> None:
+    """Swipe from start to end coordinates asynchronously."""
+    adb_prefix = _get_adb_prefix(device_id)
+    
+    if duration_ms is None:
+        dist_sq = (start_x - end_x) ** 2 + (start_y - end_y) ** 2
+        duration_ms = int(dist_sq / 1000)
+        duration_ms = max(1000, min(duration_ms, 2000))
+    
+    cmd = adb_prefix + [
+        "shell", "input", "swipe",
+        str(start_x), str(start_y), str(end_x), str(end_y), str(duration_ms)
+    ]
+    await _async_run_adb(cmd, delay)
+
+
+async def async_back(device_id: str | None = None, delay: float = 1.0) -> None:
+    """Press the back button asynchronously."""
+    adb_prefix = _get_adb_prefix(device_id)
+    cmd = adb_prefix + ["shell", "input", "keyevent", "4"]
+    await _async_run_adb(cmd, delay)
+
+
+async def async_home(device_id: str | None = None, delay: float = 1.0) -> None:
+    """Press the home button asynchronously."""
+    adb_prefix = _get_adb_prefix(device_id)
+    cmd = adb_prefix + ["shell", "input", "keyevent", "KEYCODE_HOME"]
+    await _async_run_adb(cmd, delay)
+
+
+async def async_launch_app(app_name: str, device_id: str | None = None, delay: float = 1.0) -> bool:
+    """Launch an app by name asynchronously."""
+    if app_name not in APP_PACKAGES:
+        return False
+    
+    adb_prefix = _get_adb_prefix(device_id)
+    package = APP_PACKAGES[app_name]
+    
+    cmd = adb_prefix + [
+        "shell", "monkey", "-p", package,
+        "-c", "android.intent.category.LAUNCHER", "1"
+    ]
+    await _async_run_adb(cmd, delay)
+    return True
+
+
+async def async_get_current_app(device_id: str | None = None) -> str:
+    """Get the currently focused app name asynchronously."""
+    import asyncio
+    
+    adb_prefix = _get_adb_prefix(device_id)
+    
+    proc = await asyncio.create_subprocess_exec(
+        *adb_prefix, "shell", "dumpsys", "window",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    )
+    stdout, _ = await proc.communicate()
+    output = stdout.decode('utf-8', errors='ignore')
+    
+    for line in output.split("\n"):
+        if "mCurrentFocus" in line or "mFocusedApp" in line:
+            for app_name, package in APP_PACKAGES.items():
+                if package in line:
+                    return app_name
+    
+    return "System Home"
+
