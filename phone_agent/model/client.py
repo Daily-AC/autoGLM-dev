@@ -304,3 +304,92 @@ class MessageBuilder:
         """
         info = {"current_app": current_app, **extra_info}
         return json.dumps(info, ensure_ascii=False)
+
+
+# =============================================================================
+# Async Model Client
+# =============================================================================
+
+class AsyncModelClient:
+    """
+    Async client for interacting with OpenAI-compatible models.
+    
+    Uses httpx for async HTTP requests, providing better concurrency
+    for web applications.
+    
+    Args:
+        config: Model configuration.
+    """
+    
+    def __init__(self, config: ModelConfig | None = None):
+        self.config = config or ModelConfig()
+        self._parse_response = ModelClient._parse_response  # Reuse sync parser
+        
+    async def request(self, messages: list[dict[str, Any]]) -> ModelResponse:
+        """
+        Send an async request to the model.
+        
+        Args:
+            messages: List of message dictionaries.
+            
+        Returns:
+            ModelResponse containing thinking and action.
+        """
+        import httpx
+        
+        max_retries = 3
+        raw_content = ""
+        
+        headers = {
+            "Authorization": f"Bearer {self.config.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.config.model_name,
+            "messages": messages,
+            "max_tokens": self.config.max_tokens,
+            "temperature": self.config.temperature,
+            "top_p": self.config.top_p,
+            "frequency_penalty": self.config.frequency_penalty,
+            **self.config.extra_body
+        }
+        
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"{self.config.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    raw_content = data["choices"][0]["message"]["content"]
+                    
+                    if raw_content and raw_content.strip():
+                        break
+                    
+                    logger.warn("Model returned empty content", attempt=attempt+1)
+                    if attempt < max_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(1.0)
+                        
+            except Exception as e:
+                logger.error("Async API call failed", attempt=attempt+1, error=str(e))
+                if attempt == max_retries - 1:
+                    raw_content = ""
+                else:
+                    import asyncio
+                    await asyncio.sleep(1.0)
+        
+        if not raw_content:
+            raw_content = ""
+        
+        # Use sync parser (it's a pure function, doesn't need to be async)
+        sync_client = ModelClient.__new__(ModelClient)
+        sync_client.config = self.config
+        thinking, action = sync_client._parse_response(raw_content)
+        return ModelResponse(thinking=thinking, action=action, raw_content=raw_content)
+
