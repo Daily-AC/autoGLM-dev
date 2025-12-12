@@ -5,7 +5,7 @@ This package provides tools for automating Android phone interactions
 using AI models for visual understanding and decision making.
 """
 
-from phone_agent.agent import PhoneAgent, AsyncPhoneAgent, CancellationToken, TaskCancelledException
+from phone_agent.agent import PhoneAgent, AsyncPhoneAgent, CancellationToken, AsyncCancellationToken, TaskCancelledException
 from phone_agent.logging import get_logger, set_global_queue, StructuredLogger, LogLevel
 from phone_agent.exceptions import (
     AutoGLMError,
@@ -25,7 +25,8 @@ __all__ = [
     # Core
     "PhoneAgent",
     "AsyncPhoneAgent",
-    "CancellationToken", 
+    "CancellationToken",
+    "AsyncCancellationToken",
     "TaskCancelledException",
     # Logging
     "get_logger",

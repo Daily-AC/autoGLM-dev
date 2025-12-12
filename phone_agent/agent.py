@@ -54,10 +54,59 @@ class CancellationToken:
         if self.is_cancelled:
             raise TaskCancelledException(message)
 
-
 class TaskCancelledException(Exception):
     """Exception raised when a task is cancelled."""
     pass
+
+
+class AsyncCancellationToken:
+    """
+    Async cancellation token for stopping agent tasks in async context.
+    
+    Uses asyncio.Event instead of threading.Event for proper async support.
+    
+    Usage:
+        token = AsyncCancellationToken()
+        
+        # In async coroutine:
+        await token.check()  # Raises asyncio.CancelledError if cancelled
+        
+        # To cancel:
+        token.cancel()
+    """
+    
+    def __init__(self):
+        self._cancelled = False
+    
+    def cancel(self):
+        """Request cancellation."""
+        self._cancelled = True
+    
+    @property
+    def is_cancelled(self) -> bool:
+        """Check if cancellation was requested."""
+        return self._cancelled
+    
+    def reset(self):
+        """Reset the token for reuse."""
+        self._cancelled = False
+    
+    async def check(self, message: str = "Task cancelled by user"):
+        """
+        Check cancellation and raise asyncio.CancelledError if cancelled.
+        
+        This is an async method that yields to the event loop.
+        """
+        import asyncio
+        await asyncio.sleep(0)  # Yield to event loop
+        if self._cancelled:
+            raise asyncio.CancelledError(message)
+    
+    def raise_if_cancelled(self, message: str = "Task cancelled by user"):
+        """Synchronous cancellation check (for compatibility)."""
+        import asyncio
+        if self._cancelled:
+            raise asyncio.CancelledError(message)
 
 
 @dataclass
@@ -314,29 +363,39 @@ class PhoneAgent:
             if not response.action: 
                 raise ValueError("Empty action from model")
             action = parse_action(response.action)
-        except ValueError:
+        except ValueError as e:
+            # Get raw content for debugging
+            raw_preview = (response.raw_content[:200] if response.raw_content else "").strip()
+            action_preview = (response.action[:200] if response.action else "").strip()
+            
             if self.agent_config.verbose:
-                logger.warn("Parsing failed or empty action", raw=response.raw_content[:200] if response.raw_content else "")
-            # Don't finish immediately - let agent_runner decide whether to retry
-            # Track consecutive failures to prevent infinite loop
+                logger.warn("Parsing failed", error=str(e), raw=raw_preview)
+            
+            # Track consecutive failures
             self._consecutive_failures = getattr(self, '_consecutive_failures', 0) + 1
+            self._last_error = f"解析失败: {str(e)}" if str(e) else "模型返回空响应"
+            self._last_raw_response = raw_preview or action_preview
+            
             if self._consecutive_failures >= 3:
-                # Too many consecutive failures, stop
+                # Build detailed error message
+                error_detail = f"连续 {self._consecutive_failures} 次解析失败"
+                if self._last_raw_response:
+                    error_detail += f"\n\n最后响应: {self._last_raw_response[:100]}..."
+                
                 return StepResult(
                     success=False,
                     finished=True,
-                    action=None,
+                    action={"_metadata": "error"},  # Mark as error, not finish
                     thinking=response.thinking,
-                    message=f"Model failed to generate valid actions after {self._consecutive_failures} attempts.",
+                    message=error_detail,
                 )
             else:
-                # Return failure but allow retry
                 return StepResult(
                     success=False,
-                    finished=False,  # Don't finish, let loop retry
+                    finished=False,
                     action=None,
                     thinking=response.thinking,
-                    message="Model returned empty response, will retry...",
+                    message=f"模型返回无效响应，正在重试... ({self._consecutive_failures}/3)",
                 )
 
         if self.agent_config.verbose:

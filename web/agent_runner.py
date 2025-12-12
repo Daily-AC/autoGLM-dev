@@ -162,8 +162,15 @@ async def run_agent_task(task: str, task_id: str) -> None:
             
             # Log final result
             if res.finished and app_state.current_task_id == task_id:
-                logger.result(res.message or "Task Completed")
-                app_state.agent.reset()
+                # Check if it's a failure (action with _metadata="error")
+                is_error = res.action and res.action.get("_metadata") == "error"
+                
+                if is_error:
+                    logger.failed(res.message or "任务执行失败")
+                    # Don't reset agent on failure - allow continue
+                else:
+                    logger.result(res.message or "任务完成")
+                    app_state.agent.reset()
                 
     except asyncio.CancelledError:
         logger.cancelled("Task cancelled")
