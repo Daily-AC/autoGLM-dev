@@ -31,17 +31,28 @@ from phone_agent.adb.input import (
     detect_and_set_adb_keyboard,
     restore_keyboard,
     type_text,
+    # Async versions
+    async_type_text,
+    async_clear_text,
+    async_detect_and_set_adb_keyboard,
+    async_restore_keyboard,
 )
-from phone_agent.adb.screenshot import get_screenshot
+from phone_agent.adb.screenshot import get_screenshot, async_get_screenshot
 
 __all__ = [
-    # Screenshot
+    # Screenshot (sync + async)
     "get_screenshot",
-    # Input
+    "async_get_screenshot",
+    # Input (sync)
     "type_text",
     "clear_text",
     "detect_and_set_adb_keyboard",
     "restore_keyboard",
+    # Input (async)
+    "async_type_text",
+    "async_clear_text",
+    "async_detect_and_set_adb_keyboard",
+    "async_restore_keyboard",
     # Device control (sync)
     "get_current_app",
     "tap",
@@ -67,4 +78,3 @@ __all__ = [
     "quick_connect",
     "list_devices",
 ]
-
