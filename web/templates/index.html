@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoGLM Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#1a1a1a',
+                        darker: '#111111',
+                        accent: '#2CC985',
+                        accent_hover: '#229966',
+                        glass: 'rgba(255, 255, 255, 0.05)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #111; color: #eee; }
+        .glass-panel {
+            background: rgba(30, 30, 30, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Timeline Styles */
+        .timeline-container { position: relative; padding-left: 24px; margin-top: 16px; margin-bottom: 24px; }
+        .timeline-line {
+            position: absolute; left: 11px; top: 10px; bottom: 0;
+            width: 2px; bg-white/5; background: rgba(255,255,255,0.05);
+            border-radius: 99px;
+        }
+        .task-node { margin-bottom: 12px; position: relative; }
+        .task-node-header {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px;
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px; cursor: pointer; transition: all 0.2s;
+        }
+        .task-node-header:hover { background: rgba(255,255,255,0.06); }
+        
+        /* Node Types */
+        .node-icon { 
+            width: 24px; height: 24px; border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; flex-shrink: 0; position: relative; z-index: 10;
+        }
+        .type-thought .node-icon { background: rgba(255,255,255,0.1); color: #9ca3af; border: 1px solid rgba(255,255,255,0.1); }
+        .type-tool .node-icon { background: rgba(59, 130, 246, 0.1); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+        .type-result .node-icon { background: rgba(34, 197, 94, 0.1); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
+
+        /* Icon Connector (Dot on Timeline) */
+        .node-connector {
+            position: absolute; left: -25px; top: 18px;
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #333; border: 2px solid #555;
+            z-index: 5;
+        }
+        .active-task .timeline-line { background: linear-gradient(to bottom, #2CC985, rgba(255,255,255,0.05)); }
+        
+        .node-details {
+            margin-top: 8px; margin-left: 36px;
+            background: rgba(0,0,0,0.3); border-radius: 8px;
+            padding: 12px; font-family: monospace; font-size: 11px;
+            border: 1px solid rgba(255,255,255,0.05);
+            display: none; /* Hidden by default */
+        }
+        .node-details.open { display: block; animation: fadeIn 0.2s; }
+        
+        .arrow-icon { transition: transform 0.2s; }
+        .open .arrow-icon { transform: rotate(90deg); }
+
+        /* Status Icons */
+        .status-marker { margin-left: auto; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+        .status-loading { 
+            border: 2px solid rgba(255,255,255,0.1); border-top-color: #2CC985; 
+            border-radius: 50%; width: 100%; height: 100%; 
+            animation: spin 1s linear infinite; 
+        }
+        .status-done { color: #2CC985; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden selection:bg-accent selection:text-black">
+
+    <!-- Sidebar: Profiles -->
+    <div class="w-72 bg-darker border-r border-white/10 flex flex-col z-20 transition-all duration-300">
+        <div class="h-16 flex items-center px-6 border-b border-white/5">
+            <div class="w-3 h-3 rounded-full bg-accent mr-3 shadow-[0_0_10px_#2CC985]"></div>
+            <h1 class="font-bold text-lg tracking-wide">AutoGLM</h1>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-2" id="profile-list">
+            <!-- Profiles injected by JS -->
+        </div>
+
+        <div class="p-4 border-t border-white/5">
+            <button onclick="openModal()" class="w-full py-2 px-4 rounded bg-white/5 hover:bg-white/10 text-sm transition flex items-center justify-center gap-2 border border-white/5">
+                <span>+</span> Add Service
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col relative bg-gradient-to-br from-gray-900 via-[#0a0a0a] to-black">
+        
+        <!-- App Header (New V3 Design) -->
+        <div class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-white/5 backdrop-blur-md z-10">
+            <div class="flex items-center gap-3">
+                <div class="h-8 w-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-black font-bold shadow-lg shadow-green-500/20">AI</div>
+                <div>
+                    <h1 class="font-bold text-gray-100 tracking-tight">AutoGLM</h1>
+                    <p id="header-status-text" class="text-[10px] text-gray-400 font-mono">System Ready</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                    <button id="btn-restart" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors text-xs font-mono border border-white/5" title="Restart Session">
+                    ↺ RESET
+                </button>
+                <div class="flex gap-3" id="status-dots">
+                    <!-- ADB Capsule -->
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-help" title="Android Debug Bridge">
+                        <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                        <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">ADB</span>
+                        <div id="dot-adb" class="w-1.5 h-1.5 rounded-full bg-gray-600 transition-colors shadow-[0_0_8px_rgba(0,0,0,0)]"></div>
+                    </div>
+
+                    <!-- API Capsule -->
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-help" title="LLM API Service">
+                         <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                        <span class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">API</span>
+                        <div id="dot-api" class="w-1.5 h-1.5 rounded-full bg-gray-600 transition-colors shadow-[0_0_8px_rgba(0,0,0,0)]"></div>
+                    </div>
+
+                    <!-- Agent Capsule -->
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-help" title="Agent Work Status">
+                        <svg class="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        <span id="text-agent" class="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Ready</span>
+                        <div id="dot-agent" class="w-1.5 h-1.5 rounded-full bg-gray-600 transition-colors shadow-[0_0_8px_rgba(0,0,0,0)]"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth pb-40 relative z-0">
+            <!-- Welcome Message -->
+            <div class="flex gap-4">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex-shrink-0 flex items-center justify-center text-black text-xs font-bold shadow-lg shadow-green-500/20">AI</div>
+                <div class="flex-1 space-y-2">
+                    <div class="glass-panel p-4 rounded-2xl rounded-tl-none text-gray-200 border border-white/10 shadow-xl">
+                        <p class="leading-relaxed">System Initializing... Select a service profile to begin.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area (Fixed, pushes up when terminal opens) -->
+        <!-- Input Area (Fixed, pushes up when terminal opens) -->
+        <div id="input-container" class="absolute bottom-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out">
+            <!-- Terminal Toggle Handle -->
+            <div class="bg-black/80 backdrop-blur-xl border-t border-white/10 relative transition-all duration-300">
+                <!-- Toggle Button -->
+                <div id="terminal-toggle" class="absolute -top-6 left-1/2 -translate-x-1/2 cursor-pointer group z-50">
+                    <div class="px-6 py-1.5 bg-gray-900/90 border border-white/10 border-b-0 rounded-t-xl flex items-center gap-2 text-[10px] text-gray-400 group-hover:text-green-400 transition-colors shadow-lg backdrop-blur-md">
+                         <span class="uppercase tracking-widest font-bold font-mono">Terminal</span>
+                         <svg id="terminal-arrow" class="w-3 h-3 transition-transform duration-300 transform group-hover:-translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                    </div>
+                </div>
+
+                <!-- Input Box Container -->
+                <div class="p-6 max-w-[95%] mx-auto w-full">
+                    <div class="relative group">
+                        <!-- Glow Effect -->
+                        <div class="absolute -inset-0.5 bg-gradient-to-r from-green-500/10 to-emerald-500/10 rounded-2xl blur opacity-50 group-hover:opacity-100 transition duration-500"></div>
+                        
+                        <!-- Input Field -->
+                        <!-- Input Field -->
+                        <div id="input-box-wrapper" class="relative flex items-center bg-gray-900/50 rounded-2xl border border-white/10 shadow-xl backdrop-blur-sm transition-all duration-300 group-hover:bg-gray-900/80">
+                            <span class="pl-5 text-green-500 font-mono text-xl animate-pulse pointer-events-none">>_</span>
+                            <input type="text" id="prompt-input" 
+                                class="w-full bg-transparent border-none text-gray-100 placeholder-gray-600 focus:ring-0 px-4 py-5 font-mono text-sm outline-none tracking-wide"
+                                placeholder="Command the agent..." autocomplete="off">
+                            
+                            <!-- Controls -->
+                            <div class="pr-3 flex gap-3 items-center">
+                                <button id="btn-stop" class="hidden px-4 py-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-bold text-xs border border-red-500/20 flex items-center gap-2 uppercase tracking-warn">
+                                    <span class="w-1.5 h-1.5 bg-red-500 rounded-sm animate-pulse"></span>
+                                    Stop
+                                </button>
+                                <button id="btn-send" class="h-10 px-6 rounded-xl bg-green-500 hover:bg-green-400 text-black font-bold transition-all shadow-[0_0_20px_rgba(34,197,94,0.2)] hover:shadow-[0_0_30px_rgba(34,197,94,0.4)] active:scale-95 flex items-center justify-center text-sm tracking-wide">
+                                    Send
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Terminal Drawer -->
+            <div id="terminal-drawer" class="h-0 overflow-hidden bg-gray-950 border-t border-white/10 transition-all duration-300 ease-in-out relative">
+                 <div class="absolute top-0 right-0 p-2 z-10">
+                     <button class="p-2 text-gray-600 hover:text-white transition-colors" onclick="document.getElementById('logs-content').innerHTML=''">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                 </div>
+                 <div class="h-8 bg-white/5 flex items-center px-4 border-b border-white/5">
+                    <span class="text-[10px] font-mono text-green-500/50">root@autogui:~/console</span>
+                </div>
+                <div class="h-72 overflow-auto p-4 font-mono text-xs space-y-1.5 leading-relaxed" id="logs-content">
+                    <div class="text-gray-600 italic">-- System Ready --</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar: Live Screen (Preserved) -->
+    <div class="w-[340px] bg-black/40 border-l border-white/5 backdrop-blur-md flex flex-col z-20 relative transition-all duration-300" id="screen-panel">
+        <div class="h-16 flex items-center justify-between px-6 border-b border-white/5">
+            <h2 class="font-bold text-sm tracking-wide text-gray-200">Live View</h2>
+            <div class="flex gap-2 items-center">
+                 <div class="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#EF4444]" title="Live"></div>
+            </div>
+        </div>
+        
+        <div class="flex-1 flex items-center justify-center p-6 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-10">
+            <div class="relative w-full aspect-[9/19] bg-black rounded-[2rem] border-4 border-gray-800 shadow-2xl overflow-hidden ring-1 ring-white/10 group">
+                <!-- Screen Image Stream -->
+                <img src="/api/screen/stream" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" alt="Device Screen">
+            </div>
+        </div>
+    </div>
+    
+    <!-- Profile Modal (Preserved) -->
+    <div id="profile-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+        <!-- ... (Same as before) ... -->
+        <div class="glass-panel w-[450px] rounded-xl p-8 shadow-2xl border border-white/10 relative">
+            <h2 id="modal-title" class="text-xl font-bold mb-6 text-white">Add Service</h2>
+            <input type="hidden" id="p-index" value="-1">
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide font-semibold">Service Name</label>
+                    <input id="p-name" type="text" class="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 transition">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide font-semibold">Provider Interface</label>
+                    <div class="relative">
+                        <select id="p-provider" class="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-accent appearance-none text-gray-200">
+                            <option value="OpenAI">OpenAI (Standard)</option>
+                            <option value="OpenAI-Response">OpenAI-Response</option>
+                            <option value="Gemini">Gemini</option>
+                            <option value="Anthropic">Anthropic</option>
+                        </select>
+                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide font-semibold">Base URL</label>
+                    <input id="p-url" type="text" class="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-accent font-mono text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide font-semibold">API Key</label>
+                    <input id="p-key" type="password" class="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-accent font-mono text-xs">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5 uppercase tracking-wide font-semibold">Model Name</label>
+                    <input id="p-model" type="text" class="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm outline-none focus:border-accent font-mono text-xs">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-8">
+                <button onclick="closeModal()" class="text-sm text-gray-400 hover:text-white transition px-4 py-2">Cancel</button>
+                <button onclick="saveProfile()" class="bg-accent text-black font-bold text-sm px-6 py-2.5 rounded-lg hover:bg-accent_hover transition shadow-lg shadow-accent/20">Save Profile</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Info Modal -->
+    <div id="status-modal" class="fixed inset-0 bg-black/90 z-[60] hidden flex items-center justify-center backdrop-blur-md animate-fade-in">
+        <div class="bg-[#111] w-[500px] rounded-2xl p-8 border border-red-500/30 shadow-[0_0_50px_rgba(239,68,68,0.2)] relative overflow-hidden">
+             <!-- Background warning stripe -->
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-orange-500 to-red-500"></div>
+            
+            <div class="flex gap-5 items-start">
+                <div class="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center shrink-0 border border-red-500/20">
+                    <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <div class="flex-1">
+                    <h2 class="text-xl font-bold text-white mb-2">System Check Failed</h2>
+                    <p class="text-gray-400 text-sm leading-relaxed mb-6">
+                        The agent cannot be launched because one or more pre-flight checks failed. Please resolve the issues below.
+                    </p>
+                    
+                    <!-- Error Details -->
+                    <div class="space-y-3 mb-8" id="status-error-list">
+                        <!-- Dynamic Errors injected here -->
+                    </div>
+
+                    <div class="flex gap-3 justify-end">
+                        <button onclick="document.getElementById('status-modal').classList.add('hidden'); setLoading(false);" class="px-5 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition">
+                            Dismiss
+                        </button>
+                         <button onclick="checkStatus(); document.getElementById('status-modal').classList.add('hidden'); sendTask();" class="px-6 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold shadow-lg shadow-red-500/20 transition flex items-center gap-2">
+                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Retry & Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black/90 z-[70] hidden flex items-center justify-center backdrop-blur-md animate-fade-in">
+        <div class="bg-[#111] w-[400px] rounded-2xl p-6 border border-white/10 shadow-2xl relative">
+            <h3 id="confirm-title" class="text-lg font-bold text-white mb-2">Confirm Action</h3>
+            <p id="confirm-desc" class="text-gray-400 text-sm mb-6">Are you sure you want to proceed?</p>
+            <div class="flex gap-3 justify-end">
+                <button onclick="closeConfirm(false)" class="text-sm text-gray-400 hover:text-white transition px-4 py-2">Cancel</button>
+                <button id="confirm-btn-yes" class="bg-red-500 text-white font-bold text-sm px-6 py-2 rounded-lg hover:bg-red-600 transition shadow-lg shadow-red-500/20">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let profiles = [];
+    let logCursor = 0;
+    
+    // --- Render Logic ---
+    function renderProfiles() {
+        const list = document.getElementById('profile-list');
+        list.innerHTML = '<div class="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-3 ml-2">Service Profiles</div>';
+        
+        profiles.forEach((p, idx) => {
+            const isActive = p.is_active;
+            const card = document.createElement('div');
+            card.className = `group relative p-3 rounded-xl transition-all duration-200 border cursor-pointer mb-2
+                ${isActive ? 'bg-white/10 border-accent/40 shadow-[0_0_15px_-5px_#2CC985]' : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/10'}`;
+            
+            card.onclick = (e) => {
+                if (e.target.closest('button')) return;
+                activateProfile(idx);
+            };
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="text-sm font-bold ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-gray-200'}">${p.name}</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5 font-mono bg-black/30 px-1.5 py-0.5 rounded inline-block">
+                            ${p.provider || 'Auto'} • ${p.model}
+                        </div>
+                    </div>
+                    ${isActive ? '<div class="w-2 h-2 rounded-full bg-accent animate-pulse-slow"></div>' : ''}
+                </div>
+                <div class="absolute right-2 top-8 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onclick="openModal(${idx})" class="p-1.5 rounded hover:bg-white/20 text-gray-400 hover:text-white"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>
+                    <button onclick="deleteProfile(${idx})" class="p-1.5 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+
+        const active = profiles.find(p => p.is_active);
+        if (active) {
+            // Check if element exists before setting (safe check)
+            const nameEl = document.getElementById('active-profile-name');
+            if(nameEl) nameEl.textContent = active.name;
+        }
+    }
+
+    // --- Actions ---
+    function openModal(editIdx = -1) {
+        const modal = document.getElementById('profile-modal');
+        const title = document.getElementById('modal-title');
+        document.getElementById('p-index').value = editIdx;
+        
+        modal.classList.remove('hidden');
+        
+        if (editIdx >= 0) {
+            const p = profiles[editIdx];
+            title.textContent = "Edit Service";
+            document.getElementById('p-name').value = p.name;
+            document.getElementById('p-provider').value = p.provider || "OpenAI";
+            document.getElementById('p-url').value = p.base_url;
+            document.getElementById('p-key').value = p.api_key;
+            document.getElementById('p-model').value = p.model;
+        } else {
+            title.textContent = "Add Service";
+            document.getElementById('p-name').value = "";
+            document.getElementById('p-provider').value = "OpenAI";
+            document.getElementById('p-url').value = "";
+            document.getElementById('p-key').value = "";
+            document.getElementById('p-model').value = "";
+        }
+    }
+
+    async function saveProfile() {
+        const idx = parseInt(document.getElementById('p-index').value);
+        const name = document.getElementById('p-name').value;
+        const provider = document.getElementById('p-provider').value;
+        const url = document.getElementById('p-url').value;
+        const key = document.getElementById('p-key').value;
+        const model = document.getElementById('p-model').value;
+        
+        if (!name) return alert("Service Name is required");
+
+        const newProfile = { name, provider, base_url: url, api_key: key, model, is_active: false };
+        
+        if (idx >= 0) {
+            newProfile.is_active = profiles[idx].is_active;
+            profiles[idx] = newProfile;
+        } else {
+            if (profiles.length === 0) newProfile.is_active = true;
+            profiles.push(newProfile);
+        }
+        
+        await updateServer();
+        closeModal();
+    }
+    
+    async function deleteProfile(idx) {
+        if (!confirm("Delete?")) return;
+        profiles.splice(idx, 1);
+        await updateServer();
+    }
+    
+    async function activateProfile(idx) {
+        // Immediate Feedback: Set API status to Gray/Pulse
+        const dotApi = document.getElementById('dot-api');
+        if (dotApi) dotApi.className = 'w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse shadow-sm';
+        
+        profiles.forEach((p, i) => p.is_active = (i === idx));
+        await updateServer();
+        
+        // Force re-check
+        setTimeout(checkStatus, 500);
+    }
+
+    async function updateServer() {
+        await fetch('/api/profiles', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(profiles)
+        });
+        renderProfiles();
+    }
+
+    // --- Task & UI Logic ---
+    const btnSend = document.getElementById('btn-send');
+    const btnStop = document.getElementById('btn-stop');
+    const inputTask = document.getElementById('prompt-input');
+    const terminalDrawer = document.getElementById('terminal-drawer');
+    const terminalArrow = document.getElementById('terminal-arrow');
+    const terminalToggle = document.getElementById('terminal-toggle');
+    const logsContent = document.getElementById('logs-content');
+
+    let isTerminalOpen = false;
+
+    // Terminal Toggle Logic
+    if (terminalToggle) {
+        terminalToggle.onclick = () => {
+            isTerminalOpen = !isTerminalOpen;
+            if (isTerminalOpen) {
+                // Open: Set height approx 300px
+                terminalDrawer.style.height = "288px";  // h-72
+                terminalDrawer.classList.remove('h-0');
+                terminalArrow.classList.add('rotate-180');
+            } else {
+                // Close
+                terminalDrawer.style.height = "0"; 
+                terminalDrawer.classList.add('h-0');
+                terminalArrow.classList.remove('rotate-180');
+            }
+        };
+    }
+
+    // Auto-scroll logs
+    const socket = new MutationObserver(() => {
+        logsContent.scrollTop = logsContent.scrollHeight;
+    });
+    socket.observe(logsContent, { childList: true });
+
+    function setNodeFailed(nodeId) {
+        if (!nodeId) return;
+        const node = document.getElementById(nodeId);
+        if (!node) return;
+        const statusContainer = node.querySelector('.status-marker');
+        if (statusContainer) {
+            statusContainer.innerHTML = '<svg class="w-4 h-4 text-red-500 animate-fade-in" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>';
+        }
+    }
+
+    async function stopTask() {
+        if (!confirm("Stop current task?")) return;
+        try {
+            await fetch('/api/chat/stop', { method: 'DELETE' });
+            setLoading(false);
+            addBubble('system', 'Task stopped by user.');
+            
+            // Mark last node as failed/canceled
+            if (lastActiveNodeId) {
+                setNodeFailed(lastActiveNodeId);
+                // Also deactivate line
+                if (currentTaskContainer) {
+                     currentTaskContainer.querySelector('.timeline-line').style.background = 'linear-gradient(to bottom, #ef4444, rgba(255,255,255,0.05))';
+                     currentTaskContainer.classList.remove('active-task');
+                }
+                lastActiveNodeId = null;
+                currentTaskContainer = null;
+            }
+        } catch(e) { alert(e); }
+    }
+    
+    async function resetSession() {
+        showConfirm("Reset Session", "Clear conversation logic and reset agent state?", async () => {
+            try {
+                await fetch('/api/chat/reset', { method: 'POST' });
+                document.getElementById('chat-container').innerHTML = '';
+                addBubble('system', 'Session Reset. Ready for new task.');
+                setLoading(false); // Force reset state
+                checkStatus(); // Refresh dots
+            } catch(e) { alert(e); }
+        });
+    }
+
+    // Modal Logic
+    let confirmCallback = null;
+    function showConfirm(title, desc, onConfirm) {
+        document.getElementById('confirm-title').innerText = title;
+        document.getElementById('confirm-desc').innerText = desc;
+        document.getElementById('confirm-modal').classList.remove('hidden');
+        confirmCallback = onConfirm;
+        
+        // Setup Yes Button
+        const btn = document.getElementById('confirm-btn-yes');
+        btn.onclick = () => { closeConfirm(true); };
+    }
+
+    function closeConfirm(isYes) {
+        document.getElementById('confirm-modal').classList.add('hidden');
+        if (isYes && confirmCallback) confirmCallback();
+        confirmCallback = null;
+    }
+    
+    if (btnStop) btnStop.onclick = stopTask;
+    const btnRestart = document.getElementById('btn-restart');
+    if (btnRestart) btnRestart.onclick = resetSession;
+
+    function setLoading(loading) {
+        if (loading) {
+            btnSend.disabled = true;
+            btnSend.innerHTML = '<svg class="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+            btnSend.classList.add('opacity-50', 'cursor-not-allowed');
+            btnStop.classList.remove('hidden');
+        } else {
+            console.log("Resetting Loading State");
+            btnSend.disabled = false;
+            btnSend.innerHTML = 'Send';
+            btnSend.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnStop.classList.add('hidden');
+            
+            // Hide timeline loading indicator when task finishes
+            const loadingIndicator = document.querySelector('.task-loading-indicator');
+            if (loadingIndicator) {
+                loadingIndicator.remove();
+            }
+        }
+    }
+
+    // Force unlock on load to fix stuck state
+    setTimeout(() => setLoading(false), 500);
+
+    function appendLogToTerminal(line) {
+        const consoleEl = document.getElementById('logs-content');
+        if (!consoleEl) return;
+        const d = document.createElement('div');
+        d.className = line.includes("ERROR") ? "text-red-400" : "text-gray-500 hover:text-gray-300";
+        d.textContent = "> " + line;
+        consoleEl.appendChild(d);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    // ========== Helper: Strip ANSI color codes ==========
+    function stripAnsi(str) {
+        return str.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[0m/g, '').replace(/\[[\d;]*m/g, '');
+    }
+    
+    // ========== Helper: Format action for title and details ==========
+    function formatActionForDisplay(actionName, details) {
+        // Returns {title: "Tap → (50, 30)", detail: "完整JSON或null"}
+        const name = (actionName || 'unknown').toLowerCase();
+        let titleSuffix = '';
+        let detailText = null;
+        
+        try {
+            const d = typeof details === 'string' ? JSON.parse(details) : (details || {});
+            
+            // Debug: log what we received
+            console.log('[formatAction]', name, d);
+            
+            switch (name) {
+                case 'tap':
+                case 'double_tap':
+                case 'double tap':
+                case 'long_press':
+                case 'long press':
+                    const elem = d.element || d.position || [];
+                    if (Array.isArray(elem) && elem.length >= 2) {
+                        titleSuffix = `(${elem[0]}, ${elem[1]})`;
+                    }
+                    break;
+                case 'type':
+                    const txt = d.text || '';
+                    titleSuffix = `"${txt.length > 20 ? txt.substring(0, 20) + '...' : txt}"`;
+                    break;
+                case 'wait':
+                    titleSuffix = d.duration || '?';
+                    break;
+                case 'launch':
+                    titleSuffix = d.app || '?';
+                    break;
+                case 'swipe':
+                    const from = d.from || d.start || [];
+                    const to = d.to || d.end || [];
+                    if (from.length >= 2 && to.length >= 2) {
+                        titleSuffix = `(${from[0]},${from[1]}) → (${to[0]},${to[1]})`;
+                    }
+                    break;
+                case 'take_over':
+                    titleSuffix = '请操作手机';
+                    detailText = d.message || '需要用户协助完成操作';
+                    break;
+                case 'finish':
+                    // Finish action - show completion message
+                    titleSuffix = d.message || '完成';
+                    break;
+                case 'back':
+                    titleSuffix = '返回';
+                    break;
+                case 'home':
+                    titleSuffix = '主屏幕';
+                    break;
+                case 'unknown':
+                case 'do':
+                    // Try to extract useful info from details
+                    if (d.message) {
+                        titleSuffix = d.message.length > 40 ? d.message.substring(0, 40) + '...' : d.message;
+                    } else if (d.action && d.action !== 'unknown') {
+                        // Recursively format if there's an inner action
+                        return formatActionForDisplay(d.action, d);
+                    }
+                    break;
+                default:
+                    if (d.message) {
+                        titleSuffix = d.message.length > 30 ? d.message.substring(0, 30) + '...' : d.message;
+                    }
+            }
+            
+            // Only show detail if there's meaningful extra info
+            if (!detailText && Object.keys(d).length > 2) {
+                detailText = JSON.stringify(d, null, 2);
+            }
+            
+        } catch(e) {
+            detailText = String(details);
+        }
+        
+        // Build title - handle special display names
+        let displayName = name.charAt(0).toUpperCase() + name.slice(1).replace(/_/g, ' ');
+        if (name === 'finish') displayName = '完成';
+        if (name === 'unknown' || name === 'do') displayName = '执行';
+        
+        const title = titleSuffix ? `${displayName} → ${titleSuffix}` : displayName;
+        
+        return { title, detail: detailText };
+    }
+    
+    // ========== State for deduplication ==========
+    let lastBubbleType = null;
+    let lastBubbleContent = null;
+    let consecutiveThoughts = 0;
+
+    function appendLogs(logs) {
+        logs.forEach(line => {
+            if (!line) return;
+            
+            // Strip ANSI color codes first!
+            line = stripAnsi(line);
+            
+            // Skip empty lines after stripping
+            if (!line.trim()) return;
+            
+            // Try to parse as JSON first (new structured logging format)
+            let entry = null;
+            try {
+                if (line.trim().startsWith('{')) {
+                    entry = JSON.parse(line);
+                }
+            } catch(e) {
+                // Not JSON, fall through to legacy parsing
+            }
+            
+            if (entry && entry.tag) {
+                // ========== NEW: Structured JSON Logs ==========
+                appendLogToTerminal(`[${entry.level}] ${entry.msg}`);
+                
+                switch (entry.tag) {
+                    case "THOUGHT":
+                        // Skip if content is empty or just whitespace
+                        const thought = stripAnsi(entry.msg || '').trim();
+                        if (!thought || thought.length < 5) return;
+                        
+                        // Dedupe: skip if same as last thought
+                        if (lastBubbleType === 'thought' && thought === lastBubbleContent) return;
+                        
+                        // Limit consecutive thoughts (show max 2)
+                        if (lastBubbleType === 'thought') {
+                            consecutiveThoughts++;
+                            if (consecutiveThoughts > 1) return; // Skip
+                        } else {
+                            consecutiveThoughts = 0;
+                        }
+                        
+                        addBubble('thought', thought);
+                        lastBubbleType = 'thought';
+                        lastBubbleContent = thought;
+                        break;
+                        
+                    case "ACTION":
+                        consecutiveThoughts = 0;
+                        const actionName = entry.msg || 'unknown';
+                        // details.action_details contains the actual action data
+                        const actionData = entry.details?.action_details || entry.details;
+                        const actionInfo = formatActionForDisplay(actionName, actionData);
+                        
+                        // Dedupe: skip if same as last action
+                        const actionKey = `${actionName}:${JSON.stringify(actionData)}`;
+                        if (lastBubbleType === 'tool' && lastBubbleContent === actionKey) return;
+                        
+                        // Use formatted title and optional detail
+                        addBubbleWithDetail('tool', actionInfo.title, actionInfo.detail);
+                        lastBubbleType = 'tool';
+                        lastBubbleContent = actionKey;
+                        break;
+                        
+                    case "RESULT":
+                        consecutiveThoughts = 0;
+                        const resultMsg = stripAnsi(entry.msg || '').trim();
+                        
+                        // Dedupe: only show result once
+                        if (lastBubbleType === 'ai' && lastBubbleContent === resultMsg) return;
+                        
+                        addBubble('ai', resultMsg);
+                        setLoading(false);
+                        lastBubbleType = 'ai';
+                        lastBubbleContent = resultMsg;
+                        break;
+                        
+                    case "CANCELLED":
+                        consecutiveThoughts = 0;
+                        setLoading(false);
+                        if (lastActiveNodeId) {
+                            setNodeFailed(lastActiveNodeId);
+                            lastActiveNodeId = null;
+                        }
+                        lastBubbleType = 'cancelled';
+                        break;
+                }
+                
+                // Handle errors
+                if (entry.level === "ERROR") {
+                    setLoading(false);
+                    if (lastActiveNodeId) {
+                        setNodeFailed(lastActiveNodeId);
+                        lastActiveNodeId = null;
+                    }
+                }
+            } else {
+                // ========== LEGACY: String-based parsing (backward compat) ==========
+                const cleanLine = stripAnsi(line);
+                appendLogToTerminal(cleanLine);
+                
+                // Emoji-based detection (from console output)
+                if (cleanLine.includes("💭")) {
+                    let text = cleanLine.replace(/\[.*?\]/g, '').replace("💭", "").trim();
+                    // Remove XML tags like <think>, </think>, <answer>, </answer>
+                    text = text.replace(/<\/?(?:think|answer|output)>/gi, '').trim();
+                    
+                    // Skip empty or too short content
+                    if (!text || text.length < 5) return;
+                    
+                    if (lastBubbleType !== 'thought' || lastBubbleContent !== text) {
+                        addBubble('thought', text);
+                        lastBubbleType = 'thought';
+                        lastBubbleContent = text;
+                    }
+                }
+                else if (cleanLine.includes("🎯")) {
+                    consecutiveThoughts = 0;
+                    // Format: "[time] 🎯 ActionName: {json}"
+                    const rawText = cleanLine.replace(/\[.*?\]/g, '').replace("🎯", "").trim();
+                    
+                    // Parse "ActionName: {json}" format - use robust JSON extraction
+                    let actionName = rawText;
+                    let actionDetails = null;
+                    
+                    // Find first { and last } to extract clean JSON
+                    const firstBrace = rawText.indexOf("{");
+                    const lastBrace = rawText.lastIndexOf("}");
+                    
+                    if (firstBrace > 0 && lastBrace > firstBrace) {
+                        // Action name is everything before first brace, minus trailing colon/space
+                        actionName = rawText.substring(0, firstBrace).replace(/:\s*$/, '').trim();
+                        const jsonPart = rawText.substring(firstBrace, lastBrace + 1);
+                        try {
+                            actionDetails = JSON.parse(jsonPart);
+                        } catch(e) {
+                            console.warn('[JSON Parse Error]', jsonPart, e);
+                            actionDetails = null;
+                        }
+                    } else {
+                        // No JSON, just action name (e.g. "Back", "Home")
+                        const colonIdx = rawText.indexOf(":");
+                        if (colonIdx > 0) {
+                            actionName = rawText.substring(0, colonIdx).trim();
+                        }
+                    }
+                    
+                    const actionInfo = formatActionForDisplay(actionName, actionDetails);
+                    const actionKey = `${actionName}:${JSON.stringify(actionDetails)}`;
+                    
+                    if (lastBubbleContent !== actionKey) {
+                        addBubbleWithDetail('tool', actionInfo.title, actionInfo.detail);
+                        lastBubbleType = 'tool';
+                        lastBubbleContent = actionKey;
+                    }
+                }
+                else if (cleanLine.includes("✅")) {
+                    consecutiveThoughts = 0;
+                    const text = cleanLine.replace(/\[.*?\]/g, '').replace("✅", "").trim();
+                    if (text && lastBubbleContent !== text) {
+                        addBubble('ai', text);
+                        setLoading(false);
+                        lastBubbleType = 'ai';
+                        lastBubbleContent = text;
+                    }
+                }
+                else if (cleanLine.includes("<<< RESULT:")) {
+                    const content = cleanLine.split("<<< RESULT:")[1].trim();
+                    if (lastBubbleContent !== content) {
+                        addBubble('ai', content);
+                        setLoading(false);
+                        lastBubbleType = 'ai';
+                        lastBubbleContent = content;
+                    }
+                }
+                else if (cleanLine.includes("<<< TASK CANCELLED:") || cleanLine.includes("!!! ERROR:")) {
+                    setLoading(false);
+                    if (lastActiveNodeId) {
+                        setNodeFailed(lastActiveNodeId);
+                        lastActiveNodeId = null;
+                    }
+                }
+            }
+        });
+    }
+
+    // --- Improved UI Logic ---
+    let currentTaskContainer = null;
+    let lastActiveNodeId = null;
+
+    function createNewTaskBlock(userText) {
+        lastActiveNodeId = null; // Reset for new task
+        const container = document.getElementById('chat-container');
+        
+        // 1. User Header
+        const userHtml = `
+            <div class="flex gap-4 flex-row-reverse animate-fade-in group mb-2">
+                <div class="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center font-bold text-xs shrink-0 shadow-lg shadow-white/10">U</div>
+                <div class="glass-panel p-3 px-5 rounded-2xl rounded-tr-none max-w-[85%] text-sm text-gray-200 shadow-md border-white/20">
+                    <p>${userText}</p>
+                </div>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', userHtml);
+        
+        // 2. Timeline Container with loading indicator at the end
+        const timelineId = 'timeline-' + Date.now();
+        const timelineHtml = `
+            <div id="${timelineId}" class="timeline-container active-task animate-fade-in">
+                <div class="timeline-line"></div>
+                <!-- Nodes appended here -->
+                <!-- Loading indicator at the end -->
+                <div id="${timelineId}-loading" class="task-loading-indicator flex items-center gap-3 pl-8 py-3 text-gray-500 text-xs">
+                    <div class="w-5 h-5 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin"></div>
+                    <span>正在处理中...</span>
+                </div>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', timelineHtml);
+        
+        currentTaskContainer = document.getElementById(timelineId);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function setNodeDone(nodeId) {
+        if (!nodeId) return;
+        const node = document.getElementById(nodeId);
+        if (!node) return;
+        const statusContainer = node.querySelector('.status-marker');
+        if (statusContainer) {
+            statusContainer.innerHTML = '<svg class="w-4 h-4 status-done animate-fade-in" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
+        }
+    }
+
+    function addStepNode(type, title, details = null) {
+        if (!currentTaskContainer) {
+             const last = document.querySelector('.timeline-container:last-child');
+             if (last) currentTaskContainer = last;
+             if (last) {
+                 const lastNode = last.querySelector('.task-node:last-child');
+                 if(lastNode) lastActiveNodeId = lastNode.id;
+             } else return;
+        }
+
+        if (lastActiveNodeId) setNodeDone(lastActiveNodeId);
+
+        const nodeId = 'node-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+        let iconHtml = '';
+        let typeClass = '';
+        let colorClass = '';
+
+        if (type === 'thought') {
+            typeClass = 'type-thought';
+            iconHtml = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>';
+            colorClass = 'text-gray-400';
+        } else if (type === 'tool') {
+            typeClass = 'type-tool';
+            iconHtml = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>';
+            colorClass = 'text-blue-400';
+        } else if (type === 'ai') {
+            typeClass = 'type-result';
+            iconHtml = '<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+            colorClass = 'text-green-400';
+        }
+
+        const hasDetails = !!details;
+        const isFinished = (type === 'ai'); // Result is instantly done
+        
+        const html = `
+        <div class="task-node ${typeClass} group" id="${nodeId}">
+            <div class="node-connector ${type === 'tool' ? 'border-blue-500/50' : (type === 'thought' ? 'border-gray-600' : 'border-green-500')} bg-[#111]"></div>
+            
+            <div class="task-node-header" onclick="${hasDetails ? `toggleNode('${nodeId}')` : ''}">
+                <div class="node-icon">
+                    ${iconHtml}
+                </div>
+                <div class="flex-1 min-w-0 flex items-center gap-2">
+                    <div class="text-xs font-medium ${colorClass} truncate">${title}</div>
+                </div>
+                
+                <div class="status-marker">
+                    ${type === 'thought'
+                        ? '<div class="status-loading"></div>'  
+                        : '<svg class="w-4 h-4 status-done" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>'
+                    }
+                </div>
+                
+                ${hasDetails ? '<svg class="w-3 h-3 text-gray-600 arrow-icon ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>' : ''}
+            </div>
+            
+            ${hasDetails ? `
+            <div class="node-details text-gray-400 custom-scrollbar">
+                <div class="whitespace-pre-wrap break-words opacity-80">${details}</div>
+            </div>` : ''}
+        </div>`;
+
+        currentTaskContainer.insertAdjacentHTML('beforeend', html);
+        
+        lastActiveNodeId = isFinished ? null : nodeId;
+        
+        // Move loading indicator to the end (after new node)
+        const loadingIndicator = currentTaskContainer.querySelector('.task-loading-indicator');
+        if (loadingIndicator && !isFinished) {
+            currentTaskContainer.appendChild(loadingIndicator);
+        }
+        
+        const container = document.getElementById('chat-container');
+        container.scrollTop = container.scrollHeight;
+        
+        // Auto-open tools and results, keep thought closed?
+        // Or simple: keep all closed to look clean, allow user to open.
+        // Let's open Results by default.
+        if (type === 'ai' && hasDetails) toggleNode(nodeId);
+    }
+
+    window.toggleNode = function(id) {
+        const node = document.getElementById(id);
+        const details = node.querySelector('.node-details');
+        const arrow = node.querySelector('.arrow-icon');
+        
+        if (details.style.display === 'block') {
+            details.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        } else {
+            details.style.display = 'block';
+            arrow.style.transform = 'rotate(90deg)';
+        }
+    }
+
+    function addBubble(type, text) {
+        // Legacy support / Wrapper
+        if (type === 'user') {
+            createNewTaskBlock(text);
+            return;
+        }
+        
+        // Clean text first
+        const cleanText = stripAnsi(text || '').trim();
+        if (!cleanText) return; // Skip empty content
+        
+        if (type === 'thought') {
+            // Smart title: use first line or truncate
+            let title = "思考中...";
+            let content = cleanText;
+            
+            // Extract first meaningful sentence
+            const firstLine = content.split(/[。\n]/)[0].trim();
+            if (firstLine && firstLine.length > 5) {
+                title = firstLine.length > 60 ? firstLine.substring(0, 60) + "..." : firstLine;
+            }
+            
+            // Only show details if there's more content
+            const showDetails = content.length > 80;
+            addStepNode('thought', title, showDetails ? content : null);
+            
+        } else if (type === 'tool') {
+            let name = "执行操作";
+            let details = null;
+            
+            // Parse "ActionName: details" format
+            if (cleanText.includes(":")) {
+                const colonIdx = cleanText.indexOf(":");
+                const actionPart = cleanText.substring(0, colonIdx).trim();
+                const detailPart = cleanText.substring(colonIdx + 1).trim();
+                
+                // Clean action name
+                name = actionPart.replace("Use Tool:", "").trim();
+                
+                // Format details nicely
+                if (detailPart) {
+                    details = detailPart;
+                }
+            } else {
+                name = cleanText;
+            }
+            
+            addStepNode('tool', name, details);
+            
+        } else if (type === 'ai') {
+            addStepNode('ai', '任务完成', cleanText);
+            // Mark timeline as complete
+            const task = document.querySelector('.timeline-container.active-task');
+            if (task) {
+                task.querySelector('.timeline-line').style.background = 'linear-gradient(to bottom, #2CC985, #2CC985)';
+                task.classList.remove('active-task');
+            }
+            setLoading(false);
+        } else if (type === 'system-check') {
+            // Silently ignore
+        }
+    }
+    
+    // New: Add bubble with explicit title and detail (for structured actions)
+    function addBubbleWithDetail(type, title, detail) {
+        if (!title) return;
+        
+        const cleanTitle = stripAnsi(title || '').trim();
+        const cleanDetail = detail ? stripAnsi(detail).trim() : null;
+        
+        if (type === 'tool') {
+            // Check for Take_over - add confirmation button
+            if (cleanTitle.toLowerCase().includes('take_over') || cleanTitle.includes('请操作手机')) {
+                addTakeOverNode(cleanTitle, cleanDetail);
+            } else {
+                addStepNode('tool', cleanTitle, cleanDetail);
+            }
+        } else if (type === 'thought') {
+            addStepNode('thought', cleanTitle, cleanDetail);
+        } else if (type === 'ai') {
+            addStepNode('ai', cleanTitle, cleanDetail);
+        }
+    }
+    
+    // Special node for Take_over with confirmation button
+    function addTakeOverNode(title, message) {
+        if (!currentTaskContainer) {
+            const last = document.querySelector('.timeline-container:last-child');
+            if (last) currentTaskContainer = last;
+            else return;
+        }
+        
+        if (lastActiveNodeId) setNodeDone(lastActiveNodeId);
+        
+        const nodeId = 'takeover-' + Date.now();
+        const html = `
+        <div class="task-node type-takeover group" id="${nodeId}">
+            <div class="node-connector border-yellow-500/50 bg-[#111]"></div>
+            
+            <div class="task-node-header">
+                <div class="node-icon">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-medium text-yellow-400">${title}</div>
+                    ${message ? `<div class="text-xs text-gray-500 mt-1">${message}</div>` : ''}
+                </div>
+                <div class="status-marker">
+                    <div class="status-loading"></div>
+                </div>
+            </div>
+            
+            <div class="p-3 pt-0">
+                <button onclick="confirmTakeOver('${nodeId}')" class="w-full py-2 px-4 bg-yellow-600/80 hover:bg-yellow-500 text-white text-xs font-medium rounded-lg transition-colors">
+                    ✓ 我已完成操作，继续执行
+                </button>
+            </div>
+        </div>`;
+        
+        currentTaskContainer.insertAdjacentHTML('beforeend', html);
+        lastActiveNodeId = nodeId;
+        
+        const container = document.getElementById('chat-container');
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // Handle Take_over confirmation
+    window.confirmTakeOver = async function(nodeId) {
+        setNodeDone(nodeId);
+        
+        // Notify backend to continue
+        try {
+            await fetch('/api/takeover_confirm', { method: 'POST' });
+        } catch(e) {
+            console.log('Takeover confirm sent');
+        }
+    }
+    
+    // Send Task Logic with Pre-flight Check
+    async function sendTask() {
+        const tasks = inputTask.value.trim();
+        if (!tasks) return;
+        
+        // 1. Initial UI State
+        addBubble('user', tasks);
+        const userTask = tasks; // Keep ref
+        inputTask.value = '';
+        setLoading(true); 
+        
+        // 2. Pre-flight Check
+        const checkBubble = addBubble('system-check', 'Checking system status...');
+        const status = await checkStatus(true); // Return status object
+        
+        // 3. Validation Logic
+        const errors = [];
+        if (!status.adb) errors.push({title: "ADB Connection Failed", desc: "No Android device detected via ADB."});
+        if (!status.api) errors.push({title: "API Service Unavailable", desc: "Cannot connect to the LLM API provider."});
+        if (status.agent === 'busy') errors.push({title: "Agent Busy", desc: "The agent is currently executing another task."});
+        
+        if (errors.length > 0) {
+            // FAILED: Show Modal
+            setLoading(false); // Reset UI loading immediately
+            showStatusErrors(errors);
+            if (checkBubble) checkBubble.remove(); 
+            return;
+        }
+
+        // Success: Remove checking bubble
+        if (checkBubble) checkBubble.remove();
+
+        // 4. Success -> Send
+        try {
+            await fetch('/api/chat', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({task: userTask}) });
+        } catch(e) { 
+            alert(e); 
+            setLoading(false); 
+        }
+    }
+    
+    function showStatusErrors(errors) {
+        const list = document.getElementById('status-error-list');
+        list.innerHTML = '';
+        errors.forEach(err => {
+            const item = document.createElement('div');
+            item.className = "bg-red-500/5 border border-red-500/10 rounded-lg p-3 flex gap-3 items-start";
+            item.innerHTML = `
+                <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                    <div class="text-red-400 font-bold text-xs uppercase tracking-wider mb-1">${err.title}</div>
+                    <div class="text-gray-400 text-xs">${err.desc}</div>
+                </div>
+            `;
+            list.appendChild(item);
+        });
+        document.getElementById('status-modal').classList.remove('hidden');
+    }
+
+    // Init
+    if (inputTask)    inputTask.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            if (btnSend.disabled) {
+                e.preventDefault(); // Prevent default if disabled
+                return;
+            }
+            if (!e.shiftKey) { // Allow Shift+Enter for new line
+                e.preventDefault();
+                sendTask();
+            }
+        }
+    });window.closeModal = function() { document.getElementById('profile-modal').classList.add('hidden'); }
+    window.openModal = openModal; window.saveProfile = saveProfile; window.deleteProfile = deleteProfile;
+    window.activateProfile = activateProfile; window.sendTask = sendTask;
+    window.checkStatus = checkStatus;
+    
+    if (typeof marked === 'undefined') {
+        const s = document.createElement('script');
+        s.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
+        document.head.appendChild(s);
+    }
+
+    async function fetchProfiles() { try { const res = await fetch('/api/profiles'); profiles = await res.json(); renderProfiles(); } catch (e) {} }
+    
+    async function checkStatus(returnData = false) {
+        try { const res = await fetch('/api/status'); const status = await res.json();
+            // V3 Header Dots Sync
+            // IDs: dot-adb, dot-api, dot-agent (defined in header)
+            const hDotAdb = document.getElementById('dot-adb');
+            const hDotApi = document.getElementById('dot-api');
+            const hDotAgent = document.getElementById('dot-agent');
+            const hTextAgent = document.getElementById('text-agent');
+            
+            if (hDotAdb) hDotAdb.className = `w-1.5 h-1.5 rounded-full transition-colors duration-500 ${status.adb ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500'}`;
+            if (hDotApi) {
+                let apiClass = 'bg-gray-500 animate-pulse'; // Default/Null
+                if (status.api === true) apiClass = 'bg-green-500 shadow-[0_0_8px_#22c55e]';
+                else if (status.api === false) apiClass = 'bg-red-500';
+                
+                hDotApi.className = `w-1.5 h-1.5 rounded-full transition-colors duration-500 ${apiClass}`;
+            }
+            
+            if (hDotAgent) {
+                if (status.agent === 'busy') {
+                     hDotAgent.className = 'w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shadow-[0_0_8px_#facc15]';
+                     if (hTextAgent) { 
+                         hTextAgent.innerText = 'BUSY'; 
+                         hTextAgent.className = 'text-[10px] uppercase font-bold text-yellow-500 tracking-wider'; 
+                     }
+                     // Sync Lock State
+                     if (!btnSend.disabled) setLoading(true);
+                } else {
+                     const isReady = status.agent === 'ready';
+                     hDotAgent.className = `w-1.5 h-1.5 rounded-full transition-colors duration-500 ${isReady ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-gray-600'}`;
+                     if (hTextAgent) {
+                        hTextAgent.innerText = isReady ? 'READY' : 'OFFLINE';
+                        hTextAgent.className = `text-[10px] uppercase font-bold tracking-wider ${isReady ? 'text-gray-200' : 'text-gray-400'}`;
+                     }
+                }
+            }
+
+             if (returnData) return status;
+
+        } catch (e) {
+            if (returnData) return { adb: false, api: false, agent: 'offline' };
+        }
+    }
+    
+    async function pollLogs() {
+        try { const res = await fetch(`/api/logs?since=${logCursor}`); const data = await res.json();
+            if (data.logs.length > 0) { appendLogs(data.logs); logCursor = data.next_cursor; }
+        } catch(e) {} setTimeout(pollLogs, 1000);
+    }
+    
+    fetchProfiles(); 
+    checkStatus();
+    setInterval(checkStatus, 1000); // Heartbeat
+    pollLogs();
+
+
+
+</script>
+</body>
+</html>
