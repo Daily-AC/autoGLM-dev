@@ -16,6 +16,15 @@ from phone_agent.adb.device import (
     long_press,
     swipe,
     tap,
+    # Async versions
+    async_tap,
+    async_double_tap,
+    async_long_press,
+    async_swipe,
+    async_back,
+    async_home,
+    async_launch_app,
+    async_get_current_app,
 )
 from phone_agent.adb.input import (
     clear_text,
@@ -33,7 +42,7 @@ __all__ = [
     "clear_text",
     "detect_and_set_adb_keyboard",
     "restore_keyboard",
-    # Device control
+    # Device control (sync)
     "get_current_app",
     "tap",
     "swipe",
@@ -42,6 +51,15 @@ __all__ = [
     "double_tap",
     "long_press",
     "launch_app",
+    # Device control (async)
+    "async_tap",
+    "async_double_tap",
+    "async_long_press",
+    "async_swipe",
+    "async_back",
+    "async_home",
+    "async_launch_app",
+    "async_get_current_app",
     # Connection management
     "ADBConnection",
     "DeviceInfo",
@@ -49,3 +67,4 @@ __all__ = [
     "quick_connect",
     "list_devices",
 ]
+
