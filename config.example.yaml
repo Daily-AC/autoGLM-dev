@@ -1,0 +1,46 @@
+# =============================================================================
+# Open-AutoGLM Configuration Example
+# =============================================================================
+# Copy this file to config.yaml and customize as needed.
+# Environment variables take precedence over this file.
+# Prefix: AUTOGLM_ (e.g., AUTOGLM_API_KEY)
+
+# AI Model Settings
+model:
+  base_url: "https://api.openai.com/v1"
+  # api_key: ""  # Use AUTOGLM_API_KEY env var instead
+  model_name: "gpt-4o"
+  max_tokens: 4096
+  temperature: 0.7
+  timeout: 60
+  max_retries: 3
+
+# Android Device Settings
+device:
+  id: null # Auto-detect if not specified
+  adb_path: "adb"
+  scrcpy_path: "scrcpy"
+  screenshot_timeout: 10
+  action_delay: 1.0
+
+# Agent Behavior Settings
+agent:
+  max_steps: 100
+  verbose: false
+  language: "zh" # "zh" or "en"
+  confirm_sensitive: true
+  auto_screenshot: true
+
+# Web Console Settings
+web:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  auto_open_browser: true
+  stream_fps: 10
+
+# Logging Settings
+log:
+  level: "INFO" # DEBUG, INFO, WARN, ERROR
+  file_path: null # Optional: path to log file
+  json_format: false
