@@ -186,8 +186,12 @@ class StructuredLogger:
         self.log(LogLevel.AGENT, action_name, tag="ACTION", action_details=details)
     
     def result(self, msg: str) -> None:
-        """Log task result."""
+        """Log task result (success)."""
         self.log(LogLevel.AGENT, msg, tag="RESULT")
+    
+    def failed(self, msg: str) -> None:
+        """Log task failure."""
+        self.log(LogLevel.ERROR, msg, tag="FAILED")
     
     def cancelled(self, msg: str = "Task cancelled by user") -> None:
         """Log task cancellation."""

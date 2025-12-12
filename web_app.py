@@ -151,6 +151,23 @@ async def api_stop_chat():
     return {"status": "ignored"}
 
 
+@app.post("/api/chat/continue")
+async def api_continue_chat():
+    """Continue a failed task from where it left off."""
+    import asyncio
+    
+    if not app_state.agent:
+        return {"status": "error", "message": "No agent to continue"}
+    
+    # Agent wasn't reset on failure, so context is preserved
+    task_id = str(__import__('uuid').uuid4())
+    app_state.current_task_id = task_id
+    
+    # Continue task (step without new prompt uses existing context)
+    asyncio.create_task(run_agent_task("继续", task_id))
+    return {"status": "continuing", "task_id": task_id}
+
+
 @app.post("/api/chat/reset")
 async def api_reset_chat():
     """Reset the agent completely."""
