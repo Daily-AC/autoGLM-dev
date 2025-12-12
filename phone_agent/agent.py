@@ -402,3 +402,295 @@ class PhoneAgent:
     def step_count(self) -> int:
         """Get the current step count."""
         return self._step_count
+
+
+# =============================================================================
+# Async Phone Agent
+# =============================================================================
+
+class AsyncPhoneAgent:
+    """
+    Async version of PhoneAgent for web applications.
+    
+    Uses AsyncModelClient for non-blocking API calls.
+    All methods that involve I/O are async.
+    
+    Args:
+        model_config: Configuration for the AI model.
+        agent_config: Configuration for the agent behavior.
+        confirmation_callback: Optional async callback for sensitive action confirmation.
+        takeover_callback: Optional async callback for takeover requests.
+    """
+    
+    def __init__(
+        self,
+        model_config: ModelConfig | None = None,
+        agent_config: AgentConfig | None = None,
+        confirmation_callback: Callable[[str], bool] | None = None,
+        takeover_callback: Callable[[str], None] | None = None,
+    ):
+        from phone_agent.model import AsyncModelClient
+        
+        self.model_config = model_config or ModelConfig()
+        self.agent_config = agent_config or AgentConfig()
+
+        self.model_client = AsyncModelClient(self.model_config)
+        self.action_handler = ActionHandler(
+            device_id=self.agent_config.device_id,
+            confirmation_callback=confirmation_callback,
+            takeover_callback=takeover_callback,
+        )
+
+        self._context: list[dict[str, Any]] = []
+        self._step_count = 0
+        self._consecutive_failures = 0
+        self._screenshot_provider: Callable[[str], Any] | None = None
+        self._cancelled = False
+
+    def set_screenshot_provider(self, provider: Callable[[str], Any]):
+        """Set a provider to get screenshots potentially from a video stream."""
+        self._screenshot_provider = provider
+
+    async def run(self, task: str) -> str:
+        """
+        Run the agent to complete a task asynchronously.
+
+        Args:
+            task: Natural language description of the task.
+
+        Returns:
+            Final message from the agent.
+        """
+        self._context = []
+        self._step_count = 0
+        self._cancelled = False
+
+        # First step with user prompt
+        result = await self._execute_step(task, is_first=True)
+
+        if result.finished:
+            return result.message or "Task completed"
+
+        # Continue until finished or max steps reached
+        while self._step_count < self.agent_config.max_steps:
+            if self._cancelled:
+                return "Task cancelled"
+                
+            result = await self._execute_step(is_first=False)
+
+            if result.finished:
+                return result.message or "Task completed"
+
+        return "Max steps reached"
+
+    async def step(self, task: str | None = None) -> StepResult:
+        """
+        Execute a single step of the agent asynchronously.
+
+        Args:
+            task: Task description (only needed for first step).
+
+        Returns:
+            StepResult with step details.
+        """
+        is_first = len(self._context) == 0
+
+        if is_first and not task:
+            raise ValueError("Task is required for the first step")
+
+        return await self._execute_step(task, is_first)
+
+    def reset(self) -> None:
+        """Reset the agent state for a new task."""
+        self._context = []
+        self._step_count = 0
+        self._consecutive_failures = 0
+        self._cancelled = False
+    
+    def cancel(self) -> None:
+        """Cancel the current running task."""
+        self._cancelled = True
+    
+    @property
+    def is_cancelled(self) -> bool:
+        """Check if current task is cancelled."""
+        return self._cancelled
+
+    async def _execute_step(
+        self, user_prompt: str | None = None, is_first: bool = False
+    ) -> StepResult:
+        """Execute a single step of the agent loop asynchronously."""
+        import asyncio
+        
+        # Check for cancellation
+        if self._cancelled:
+            raise asyncio.CancelledError("Task cancelled by user")
+        
+        self._step_count += 1
+
+        # Capture current screen state
+        logger.debug("Getting screenshot", step=self._step_count)
+        screenshot = None
+        if self._screenshot_provider:
+            result = self._screenshot_provider(self.agent_config.device_id)
+            if result:
+                if isinstance(result, tuple) and len(result) == 3:
+                    img, orig_width, orig_height = result
+                else:
+                    img = result
+                    orig_width, orig_height = img.width, img.height
+                
+                from phone_agent.adb.screenshot import Screenshot
+                import io, base64
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+                screenshot = Screenshot(base64_data=b64, width=orig_width, height=orig_height, is_sensitive=False)
+        
+        if not screenshot:
+            screenshot = get_screenshot(self.agent_config.device_id)
+        
+        current_app = get_current_app(self.agent_config.device_id)
+
+        # Build messages
+        if is_first:
+            self._context.append(
+                MessageBuilder.create_system_message(self.agent_config.system_prompt)
+            )
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            text_content = f"{user_prompt}\n\n{screen_info}"
+            self._context.append(
+                MessageBuilder.create_user_message(
+                    text=text_content, image_base64=screenshot.base64_data
+                )
+            )
+        else:
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            text_content = f"** Screen Info **\n\n{screen_info}"
+            self._context.append(
+                MessageBuilder.create_user_message(
+                    text=text_content, image_base64=screenshot.base64_data
+                )
+            )
+
+        # Check for cancellation before model call
+        if self._cancelled:
+            raise asyncio.CancelledError("Task cancelled by user")
+        
+        # Get model response (async!)
+        try:
+            logger.debug("Calling async model client")
+            response = await self.model_client.request(self._context)
+            logger.debug("Model responded")
+        except Exception as e:
+            if self.agent_config.verbose:
+                traceback.print_exc()
+            return StepResult(
+                success=False,
+                finished=True,
+                action=None,
+                thinking="",
+                message=f"Model error: {e}",
+            )
+
+        # Parse action from response
+        try:
+            if not response.action: 
+                raise ValueError("Empty action from model")
+            action = parse_action(response.action)
+        except ValueError:
+            if self.agent_config.verbose:
+                logger.warn("Parsing failed or empty action", raw=response.raw_content[:200] if response.raw_content else "")
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= 3:
+                return StepResult(
+                    success=False,
+                    finished=True,
+                    action=None,
+                    thinking=response.thinking,
+                    message=f"Model failed to generate valid actions after {self._consecutive_failures} attempts.",
+                )
+            else:
+                return StepResult(
+                    success=False,
+                    finished=False,
+                    action=None,
+                    thinking=response.thinking,
+                    message="Model returned empty response, will retry...",
+                )
+
+        if self.agent_config.verbose:
+            logger.thought(response.thinking)
+            logger.action(action.get("action", "unknown"), action)
+        
+        self._consecutive_failures = 0
+
+        # Check for cancellation before action execution
+        if self._cancelled:
+            raise asyncio.CancelledError("Task cancelled by user")
+        
+        # Execute action (sync for now, can be made async later)
+        try:
+            logger.debug("Executing action handler")
+            result = self.action_handler.execute(
+                action, screenshot.width, screenshot.height
+            )
+            logger.debug("Action handler completed")
+        except Exception as e:
+            logger.error("Action handler exception", error=str(e))
+            if self.agent_config.verbose:
+                traceback.print_exc()
+            result = self.action_handler.execute(
+                finish(message=str(e)), screenshot.width, screenshot.height
+            )
+
+        # Add assistant response to context
+        self._context.append(
+            MessageBuilder.create_assistant_message(
+                f"<think>{response.thinking}</think><answer>{response.action}</answer>"
+            )
+        )
+        
+        # Trim context
+        self._trim_context()
+
+        # Check if finished
+        finished = action.get("_metadata") == "finish" or result.should_finish
+
+        if finished and self.agent_config.verbose:
+            msgs = get_messages(self.agent_config.lang)
+            logger.result(result.message or action.get('message', msgs['done']))
+
+        return StepResult(
+            success=result.success,
+            finished=finished,
+            action=action,
+            thinking=response.thinking,
+            message=result.message or action.get("message"),
+        )
+
+    def _trim_context(self) -> None:
+        """Trim the context to save tokens."""
+        if len(self._context) <= 1:
+            return
+        
+        if self.agent_config.remove_old_images:
+            for i, msg in enumerate(self._context):
+                if i == 0 or i >= len(self._context) - 2:
+                    continue
+                MessageBuilder.remove_images_from_message(msg)
+        
+        max_msgs = self.agent_config.max_context_messages
+        if len(self._context) > max_msgs + 1:
+            self._context = [self._context[0]] + self._context[-(max_msgs):]
+
+    @property
+    def context(self) -> list[dict[str, Any]]:
+        """Get the current conversation context."""
+        return self._context.copy()
+
+    @property
+    def step_count(self) -> int:
+        """Get the current step count."""
+        return self._step_count
+
