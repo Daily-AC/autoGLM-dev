@@ -29,18 +29,24 @@ def status_monitor_loop(check_system_requirements, check_model_api) -> None:
                 adb_ok = check_system_requirements()
             
             profile = get_active_profile()
-            api_ok = False
-            if profile:
+            
+            # Check API only if status is unknown (None)
+            # This prevents rate limiting by avoiding repeated checks
+            if app_state.status_api is None and profile:
                 with contextlib.redirect_stdout(f):
-                    api_ok = check_model_api(
-                        profile["base_url"], 
-                        profile["model"], 
-                        profile["api_key"]
-                    )
+                    try:
+                        api_ok = check_model_api(
+                            profile["base_url"], 
+                            profile["model"], 
+                            profile["api_key"]
+                        )
+                        app_state.status_api = api_ok
+                    except Exception:
+                        app_state.status_api = False
             
             # Update State
             app_state.status_adb = adb_ok
-            app_state.status_api = api_ok
+            # app_state.status_api is updated conditionally above
             
             # Determine Agent Status
             if app_state.agent:
