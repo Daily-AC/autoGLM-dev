@@ -20,15 +20,12 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
 from openai import OpenAI
-
-# Load environment variables from .env file
-load_dotenv()
 
 from phone_agent import PhoneAgent
 from phone_agent.adb import ADBConnection, list_devices
 from phone_agent.agent import AgentConfig
+from phone_agent.config import settings  # Import unified settings
 from phone_agent.config.apps import list_supported_apps
 from phone_agent.model import ModelConfig
 
@@ -45,6 +42,7 @@ def check_system_requirements() -> bool:
     Returns:
         True if all checks pass, False otherwise.
     """
+    # ... (rest of check_system_requirements implementation remains the same)
     print("🔍 Checking system requirements...")
     print("-" * 50)
 
@@ -187,6 +185,7 @@ def check_model_api(base_url: str, model_name: str, api_key: str = "EMPTY") -> b
     Returns:
         True if all checks pass, False otherwise.
     """
+    # ... (rest of check_model_api implementation remains the same)
     print("🔍 Checking model API...")
     print("-" * 50)
 
@@ -261,7 +260,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Run with default settings
+    # Run with default settings (from config.yaml or .env)
     python main.py
 
     # Specify model endpoint
@@ -291,28 +290,28 @@ Examples:
     parser.add_argument(
         "--base-url",
         type=str,
-        default=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
+        default=settings.model.base_url,
         help="Model API base URL",
     )
 
     parser.add_argument(
         "--model",
         type=str,
-        default=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
+        default=settings.model.model_name,
         help="Model name",
     )
 
     parser.add_argument(
         "--apikey",
         type=str,
-        default=os.getenv("PHONE_AGENT_API_KEY", "EMPTY"),
+        default=settings.model.api_key or "EMPTY",
         help="API key for model authentication",
     )
 
     parser.add_argument(
         "--max-steps",
         type=int,
-        default=int(os.getenv("PHONE_AGENT_MAX_STEPS", "100")),
+        default=settings.agent.max_steps,
         help="Maximum steps per task",
     )
 
@@ -321,7 +320,7 @@ Examples:
         "--device-id",
         "-d",
         type=str,
-        default=os.getenv("PHONE_AGENT_DEVICE_ID"),
+        default=settings.device.id,
         help="ADB device ID",
     )
 
@@ -368,7 +367,7 @@ Examples:
         "--lang",
         type=str,
         choices=["cn", "en"],
-        default=os.getenv("PHONE_AGENT_LANG", "cn"),
+        default=settings.agent.language,
         help="Language for system prompt (cn or en, default: cn)",
     )
 

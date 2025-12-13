@@ -179,3 +179,15 @@ async def async_restore_keyboard(ime: str, device_id: str | None = None) -> None
     adb_prefix = _get_adb_prefix(device_id)
     await _async_run_adb(adb_prefix + ["shell", "ime", "set", ime])
 
+
+async def async_input_keyevent(keycode: str | int, device_id: str | None = None) -> None:
+    """
+    Send a key event asynchronously.
+    
+    Args:
+        keycode: Android keycode (e.g. 3 for HOME, 4 for BACK, 66 for ENTER).
+        device_id: Optional ADB device ID.
+    """
+    adb_prefix = _get_adb_prefix(device_id)
+    await _async_run_adb(adb_prefix + ["shell", "input", "keyevent", str(keycode)])
+

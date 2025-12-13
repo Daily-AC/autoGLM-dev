@@ -26,6 +26,10 @@ from web.profiles import load_profiles, save_profiles, get_active_profile
 from web.screen import video_stream_generator
 from web.agent_runner import start_task, stop_task, reset_agent, run_agent_task
 from web.services import status_monitor_loop
+from web.control import (
+    TapRequest, SwipeRequest, InputRequest, KeyRequest,
+    handle_tap, handle_swipe, handle_input, handle_key
+)
 
 # Import check functions from main
 from main import check_system_requirements, check_model_api
@@ -199,6 +203,34 @@ async def get_logs(since: int = 0):
         "logs": app_state.logs[since:],
         "next_cursor": current_len
     }
+
+
+# ============================================================================
+# Remote Control API
+# ============================================================================
+
+@app.post("/api/control/tap")
+async def api_control_tap(req: TapRequest):
+    """Handle tap control request."""
+    return await handle_tap(req)
+
+
+@app.post("/api/control/swipe")
+async def api_control_swipe(req: SwipeRequest):
+    """Handle swipe control request."""
+    return await handle_swipe(req)
+
+
+@app.post("/api/control/input")
+async def api_control_input(req: InputRequest):
+    """Handle input control request."""
+    return await handle_input(req)
+
+
+@app.post("/api/control/key")
+async def api_control_key(req: KeyRequest):
+    """Handle key event control request."""
+    return await handle_key(req)
 
 
 # ============================================================================

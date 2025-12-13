@@ -12,6 +12,9 @@ from web.state import app_state
 from phone_agent.adb.connection import list_devices
 
 
+from phone_agent.config import settings  # Import unified settings
+
+
 def video_stream_generator() -> Generator[bytes, None, None]:
     """
     Yields MJPEG frames using ADB screencap.
@@ -58,8 +61,9 @@ def video_stream_generator() -> Generator[bytes, None, None]:
                 stderr = result.stderr[:100] if result.stderr else 'unknown'
                 print(f"Stream: screencap failed: {stderr}")
                 
-            # ~10 FPS for preview
-            time.sleep(0.1)
+            # Control FPS via settings
+            target_fps = settings.web.stream_fps or 10
+            time.sleep(1.0 / target_fps)
             
         except subprocess.TimeoutExpired:
             print("Stream: screencap timeout")
@@ -91,18 +95,20 @@ def _process_screenshot(png_data: bytes) -> Optional[bytes]:
         app_state.original_screen_size = (img.width, img.height)
         
         # Resize for web preview (smaller = faster)
+        # Resize for web preview (smaller = faster)
         max_height = 800
         if img.height > max_height:
             scale = max_height / img.height
             new_size = (int(img.width * scale), max_height)
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            # Use BILLINEAR or NEAREST for speed (LANCZOS is slow)
+            img = img.resize(new_size, Image.Resampling.BILINEAR)
         
         # Store latest frame for agent (resized for display)
         app_state.latest_frame = img
         
-        # Convert to JPEG
+        # Convert to JPEG with lower quality for speed
         out = io.BytesIO()
-        img.save(out, format="JPEG", quality=70)
+        img.save(out, format="JPEG", quality=50) # Reduced from 70 to 50
         return out.getvalue()
         
     except Exception as e:

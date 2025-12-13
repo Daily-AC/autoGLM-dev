@@ -234,10 +234,35 @@
             </div>
         </div>
         
-        <div class="flex-1 flex items-center justify-center p-6 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-10">
-            <div class="relative w-full aspect-[9/19] bg-black rounded-[2rem] border-4 border-gray-800 shadow-2xl overflow-hidden ring-1 ring-white/10 group">
+        <div class="flex-1 flex items-center justify-center p-6 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-10 relative">
+            <div id="screen-container" class="relative w-full aspect-[9/19] bg-black rounded-[2rem] border-4 border-gray-800 shadow-2xl overflow-hidden ring-1 ring-white/10 group touch-none select-none">
                 <!-- Screen Image Stream -->
-                <img src="/api/screen/stream" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" alt="Device Screen">
+                <img id="screen-img" src="/api/screen/stream" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" alt="Device Screen">
+                
+                <!-- Interactive Overlay -->
+                <div id="control-overlay" class="absolute inset-0 z-10 cursor-pointer active:cursor-move"></div>
+            </div>
+            
+            <!-- Floating Control Bar -->
+            <div class="absolute bottom-10 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md rounded-full px-4 py-2 flex gap-4 border border-white/10 shadow-xl opacity-0 hover:opacity-100 transition-opacity duration-300 z-30">
+                <button onclick="sendKey(4)" class="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition" title="Back">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <button onclick="sendKey(3)" class="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition" title="Home">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                </button>
+                <button onclick="toggleTextInput()" class="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition" title="Type Text">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                </button>
+            </div>
+            
+            <!-- Text Input Modal -->
+            <div id="text-input-popover" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/90 rounded-xl p-4 border border-white/20 shadow-2xl hidden z-40 w-64 backdrop-blur">
+                <input type="text" id="remote-input" class="w-full bg-white/10 rounded px-3 py-2 text-white outline-none focus:ring-1 focus:ring-accent mb-2 text-sm" placeholder="Type to send...">
+                <div class="flex justify-end gap-2">
+                    <button onclick="toggleTextInput()" class="px-3 py-1 text-xs text-gray-400 hover:text-white">Close</button>
+                    <button onclick="sendTextInput()" class="px-3 py-1 text-xs bg-accent text-black rounded font-bold hover:bg-accent_hover">Send</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1377,6 +1402,144 @@
         } catch(e) {} setTimeout(pollLogs, 1000);
     }
     
+    // ============================================================================
+    // Remote Control Logic
+    // ============================================================================
+    const overlay = document.getElementById('control-overlay');
+    const inputPopover = document.getElementById('text-input-popover');
+    const remoteInput = document.getElementById('remote-input');
+    
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let startTime = 0;
+    
+    if (overlay) {
+        // Touch/Mouse Start
+        const onStart = (e) => {
+            e.preventDefault();
+            isDragging = false;
+            const pt = getPoint(e);
+            startX = pt.x;
+            startY = pt.y;
+            startTime = Date.now();
+        };
+        
+        // Touch/Mouse Move
+        const onMove = (e) => {
+            if (e.buttons === 0 && e.type !== 'touchmove') return; 
+            const pt = getPoint(e);
+            const dist = Math.hypot(pt.x - startX, pt.y - startY);
+            if (dist > 0.02) isDragging = true; // Threshold ~2% of width
+        };
+        
+        // Touch/Mouse End
+        const onEnd = async (e) => {
+            const pt = getPoint(e, true); // Use last known point
+            const duration = Date.now() - startTime;
+            
+            if (isDragging) {
+                // Swipe
+                console.log('Swipe:', startX, startY, '->', pt.x, pt.y);
+                await apiCall('/api/control/swipe', {
+                    start_x: startX, start_y: startY,
+                    end_x: pt.x, end_y: pt.y,
+                    duration: Math.min(Math.max(duration, 100), 1000)
+                });
+            } else {
+                // Tap
+                console.log('Tap:', startX, startY);
+                // Visual feedback
+                showTapEffect(e);
+                await apiCall('/api/control/tap', { x: startX, y: startY });
+            }
+            isDragging = false;
+        };
+        
+        overlay.addEventListener('mousedown', onStart);
+        overlay.addEventListener('mousemove', onMove);
+        overlay.addEventListener('mouseup', onEnd);
+        
+        overlay.addEventListener('touchstart', onStart);
+        overlay.addEventListener('touchmove', onMove);
+        overlay.addEventListener('touchend', onEnd);
+    }
+    
+    function getPoint(e, isEnd = false) {
+        const rect = overlay.getBoundingClientRect();
+        let clientX, clientY;
+        
+        if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        
+        // Normalize 0.0 - 1.0
+        const x = (clientX - rect.left) / rect.width;
+        const y = (clientY - rect.top) / rect.height;
+        return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }; // Clamp
+    }
+    
+    function showTapEffect(e) {
+        const rect = overlay.getBoundingClientRect();
+        let x, y;
+        if (e.changedTouches) {
+             x = e.changedTouches[0].clientX - rect.left;
+             y = e.changedTouches[0].clientY - rect.top;
+        } else {
+             x = e.clientX - rect.left;
+             y = e.clientY - rect.top;
+        }
+        
+        const ripple = document.createElement('div');
+        ripple.className = 'absolute bg-white/50 rounded-full w-8 h-8 pointer-events-none animate-ping';
+        ripple.style.left = (x - 16) + 'px';
+        ripple.style.top = (y - 16) + 'px';
+        overlay.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 500);
+    }
+    
+    // --- API Helpers ---
+    async function apiCall(url, data) {
+        try {
+            await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        } catch(e) { console.error('Control Error:', e); }
+    }
+    
+    window.sendKey = async function(keycode) {
+        await apiCall('/api/control/key', { keycode });
+    }
+    
+    window.toggleTextInput = function() {
+        if (inputPopover.classList.contains('hidden')) {
+            inputPopover.classList.remove('hidden');
+            remoteInput.focus();
+        } else {
+            inputPopover.classList.add('hidden');
+        }
+    }
+    
+    window.sendTextInput = async function() {
+        const text = remoteInput.value;
+        if (text) {
+            await apiCall('/api/control/input', { text });
+            remoteInput.value = '';
+            toggleTextInput();
+        }
+    }
+    
+    if (remoteInput) {
+        remoteInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendTextInput();
+        });
+    }
+
     fetchProfiles(); 
     checkStatus();
     setInterval(checkStatus, 1000); // Heartbeat
