@@ -4,7 +4,8 @@ import os
 import json
 from typing import List, Dict, Optional
 
-from dotenv import load_dotenv
+# Remove load_dotenv, use settings instead
+from phone_agent.config import settings
 
 
 PROFILES_FILE = "profiles.json"
@@ -12,19 +13,19 @@ PROFILES_FILE = "profiles.json"
 
 def load_profiles() -> List[Dict]:
     """
-    Load profiles from JSON file, or create defaults from .env.
+    Load profiles from JSON file, or create defaults from unified settings.
     
     Returns:
         List of profile dictionaries.
     """
     if not os.path.exists(PROFILES_FILE):
-        load_dotenv()
+        # Create default profile from unified settings (config.yaml / env)
         defaults = [{
-            "name": "Default (.env)",
-            "provider": "Anthropic" if "claude" in os.getenv("PHONE_AGENT_MODEL", "").lower() else "OpenAI",
-            "base_url": os.getenv("PHONE_AGENT_BASE_URL", "https://api.openai.com/v1"),
-            "api_key": os.getenv("PHONE_AGENT_API_KEY", ""),
-            "model": os.getenv("PHONE_AGENT_MODEL", "gpt-4o"),
+            "name": "Default (Config)",
+            "provider": "Anthropic" if "claude" in settings.model.model_name.lower() else "OpenAI",
+            "base_url": settings.model.base_url,
+            "api_key": settings.model.api_key,
+            "model": settings.model.model_name,
             "is_active": True
         }]
         save_profiles(defaults)

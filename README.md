@@ -12,6 +12,8 @@
 </p>
 
 > 🤖 **Phone Agent** - 基于 AutoGLM 的手机端智能助理框架
+>
+> 本项目基于 [Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM) 进行二次开发。
 
 Phone Agent 能够以多模态方式理解手机屏幕内容，并通过自动化操作帮助用户完成任务。只需用自然语言描述需求，如"打开小红书搜索美食"，即可自动完成整个流程。
 
