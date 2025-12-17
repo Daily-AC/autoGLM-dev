@@ -665,7 +665,7 @@ class AsyncPhoneAgent:
                 return StepResult(
                     success=False,
                     finished=True,
-                    action=None,
+                    action={"_metadata": "error"},
                     thinking=response.thinking,
                     message=f"Model failed to generate valid actions after {self._consecutive_failures} attempts.",
                 )

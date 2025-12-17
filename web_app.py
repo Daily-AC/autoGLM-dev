@@ -221,15 +221,18 @@ async def get_logs(since: int = 0):
             # Keep list size manageable
             if len(app_state.json_logs) > 1000:
                 app_state.json_logs.pop(0)
+                app_state.removed_log_count += 1
         except:
             break
     
-    current_len = len(app_state.json_logs)
-    if since >= current_len:
-        return {"logs": [], "next_cursor": current_len}
+    current_total = app_state.removed_log_count + len(app_state.json_logs)
+    
+    # Calculate relative index in the sliding window
+    relative_since = max(0, since - app_state.removed_log_count)
+    
     return {
-        "logs": app_state.json_logs[since:],
-        "next_cursor": current_len
+        "logs": app_state.json_logs[relative_since:],
+        "next_cursor": current_total
     }
 
 

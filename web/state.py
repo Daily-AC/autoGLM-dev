@@ -24,6 +24,7 @@ class AppState:
     log_queue: queue.Queue = field(default_factory=queue.Queue)
     logs: List[str] = field(default_factory=list)  # Console formatted logs
     json_logs: List[str] = field(default_factory=list)  # JSON formatted logs for frontend
+    removed_log_count: int = 0  # Track how many logs were popped from the front
     current_profile: Optional[Dict] = None
     
     # Status State
