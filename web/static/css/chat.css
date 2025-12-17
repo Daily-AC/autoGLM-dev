@@ -7,15 +7,15 @@
    =================================== */
 
 #chat-container {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
+    /* Absolute layout adaptation */
+    display: block;
     overflow-y: auto !important;
     padding: var(--spacing-lg);
-    padding-bottom: 20px;
+    padding-bottom: 120px; /* Space for input container */
     scroll-behavior: smooth;
     background: rgba(0, 0, 0, 0.2);
-    min-height: 0; /* 关键：防止Flex子项无限撑高 */
+    /* Ensure no residual flex/height issues */
+    height: 100%;
 }
 
 /* Custom Scrollbar for Chat */
