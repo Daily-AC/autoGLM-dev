@@ -22,7 +22,8 @@ class AppState:
     """
     agent: Any = None  # PhoneAgent instance
     log_queue: queue.Queue = field(default_factory=queue.Queue)
-    logs: List[str] = field(default_factory=list)
+    logs: List[str] = field(default_factory=list)  # Console formatted logs
+    json_logs: List[str] = field(default_factory=list)  # JSON formatted logs for frontend
     current_profile: Optional[Dict] = None
     
     # Status State

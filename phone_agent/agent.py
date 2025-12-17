@@ -691,7 +691,10 @@ class AsyncPhoneAgent:
         # Execute action (sync for now, can be made async later)
         try:
             logger.debug("Executing action handler")
-            result = self.action_handler.execute(
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.action_handler.execute,
                 action, screenshot.width, screenshot.height
             )
             logger.debug("Action handler completed")
@@ -699,7 +702,11 @@ class AsyncPhoneAgent:
             logger.error("Action handler exception", error=str(e))
             if self.agent_config.verbose:
                 traceback.print_exc()
-            result = self.action_handler.execute(
+            
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.action_handler.execute,
                 finish(message=str(e)), screenshot.width, screenshot.height
             )
 

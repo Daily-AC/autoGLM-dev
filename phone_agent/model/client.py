@@ -194,6 +194,36 @@ class ModelClient:
         Returns:
             Tuple of (thinking, action).
         """
+        if not content:
+            return "", ""
+
+        # Attempt JSON parsing first
+        try:
+            # Handle potential markdown code blocks
+            clean_content = content.strip()
+            if clean_content.startswith("```json"):
+                clean_content = clean_content[7:]
+            if clean_content.startswith("```"):
+                clean_content = clean_content[3:]
+            if clean_content.endswith("```"):
+                clean_content = clean_content[:-3]
+            clean_content = clean_content.strip()
+
+            data = json.loads(clean_content)
+            if isinstance(data, dict):
+                thinking = data.get("thinking", "") or data.get("thought", "")
+                action = data.get("action", "") or data.get("answer", "")
+                
+                # If action looks like it's just the function name but missing params? 
+                # Prompt says "action": "do(...)" so it should be full string.
+                
+                if thinking or action:
+                    return str(thinking), str(action)
+        except json.JSONDecodeError:
+            pass
+        
+        # Legacy Parsing Logic below (Fallback)
+
         # Rule 1: Check for finish(message=
         if "finish(message=" in content:
             parts = content.split("finish(message=", 1)
@@ -327,7 +357,7 @@ class AsyncModelClient:
         
     async def request(self, messages: list[dict[str, Any]]) -> ModelResponse:
         """
-        Send an async request to the model.
+        Send an async request to the model with streaming support for real-time logs.
         
         Args:
             messages: List of message dictionaries.
@@ -336,6 +366,7 @@ class AsyncModelClient:
             ModelResponse containing thinking and action.
         """
         import httpx
+        from phone_agent.logging import LogLevel
         
         max_retries = 3
         raw_content = ""
@@ -352,22 +383,45 @@ class AsyncModelClient:
             "temperature": self.config.temperature,
             "top_p": self.config.top_p,
             "frequency_penalty": self.config.frequency_penalty,
+            "stream": True,  # Enable streaming
             **self.config.extra_body
         }
         
         for attempt in range(max_retries):
             try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.post(
+                # Use longer timeout for streaming
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    async with client.stream(
+                        "POST",
                         f"{self.config.base_url}/chat/completions",
                         headers=headers,
                         json=payload
-                    )
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    raw_content = data["choices"][0]["message"]["content"]
-                    
+                    ) as response:
+                        response.raise_for_status()
+                        
+                        # Process SSE stream
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                                
+                            data_str = line[6:]  # Strip "data: "
+                            if data_str == "[DONE]":
+                                break
+                                
+                            try:
+                                chunk = json.loads(data_str)
+                                delta = chunk["choices"][0].get("delta", {})
+                                content = delta.get("content", "")
+                                
+                                if content:
+                                    raw_content += content
+                                    # Log chunk for real-time UI updates
+                                    # We use a special "STREAM" tag that the frontend handles specially
+                                    logger.log(LogLevel.INFO, content, tag="STREAM")
+                                    
+                            except json.JSONDecodeError:
+                                pass
+                                
                     if raw_content and raw_content.strip():
                         break
                     
@@ -387,7 +441,7 @@ class AsyncModelClient:
         if not raw_content:
             raw_content = ""
         
-        # Use sync parser (it's a pure function, doesn't need to be async)
+        # Use sync parser
         sync_client = ModelClient.__new__(ModelClient)
         sync_client.config = self.config
         thinking, action = sync_client._parse_response(raw_content)
