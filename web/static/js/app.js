@@ -330,7 +330,8 @@ function toggleTerminal() {
     if (isTerminalOpen) {
         drawer.style.transform = "translateY(0)";
         inputContainer.style.transform = "translateY(-300px)";
-        if (mainLayout) mainLayout.style.paddingBottom = "400px";
+        // 在绝对布局下，需直接调整 scroller 的 padding
+        if (elements.chatContainer) elements.chatContainer.style.paddingBottom = "420px";
         
         setTimeout(() => {
             Utils.scrollToBottom(elements.chatContainer);
@@ -338,7 +339,8 @@ function toggleTerminal() {
     } else {
         drawer.style.transform = "translateY(120%)";
         inputContainer.style.transform = "translateY(0)";
-        if (mainLayout) mainLayout.style.paddingBottom = "100px";
+        // 恢复默认 padding
+        if (elements.chatContainer) elements.chatContainer.style.paddingBottom = "120px";
     }
 }
 

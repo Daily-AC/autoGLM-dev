@@ -141,10 +141,10 @@
         </div>
 
         <!-- Middle Area: Split View -->
-        <div id="main-layout-area" class="flex-1 flex overflow-hidden min-h-0 relative z-0 pb-[100px] transition-all duration-300 ease-in-out">
+        <div id="main-layout-area" class="flex-1 flex overflow-hidden min-h-0 relative z-0 pb-0 transition-all duration-300 ease-in-out">
             
-            <!-- Chat Container -->
-            <div id="chat-container" class="flex-1 flex flex-col overflow-y-auto p-6 space-y-6 scroll-smooth border-r border-white/5 relative bg-black/20 custom-scrollbar">
+            <!-- Chat Container (Absolute Layout Refactor) -->
+            <div id="chat-container" class="absolute inset-0 overflow-y-auto p-6 pb-[120px] space-y-6 border-r border-white/5 bg-black/20 custom-scrollbar">
                 <!-- Welcome Message -->
                 <div class="flex gap-4 animate-fade-in">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex-shrink-0 flex items-center justify-center text-black text-xs font-bold shadow-lg shadow-green-500/20">AI</div>
