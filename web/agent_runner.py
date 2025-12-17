@@ -95,7 +95,7 @@ def start_task(task: str) -> tuple[str, Optional[str]]:
             return "", error
     
     # Clear old logs for new task
-    app_state.json_logs.clear()
+    # app_state.json_logs.clear()  <-- FIX: Do NOT clear logs, let them append so frontend cursor stays valid
     
     task_id = str(uuid.uuid4())
     app_state.current_task_id = task_id
