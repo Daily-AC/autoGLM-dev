@@ -15,6 +15,30 @@ from phone_agent.agent import AgentConfig
 logger = get_logger("runner")
 
 
+async def web_takeover_callback(message: str) -> None:
+    """
+    Handle takeover request from agent by waiting for user confirmation via Web UI.
+    """
+    from phone_agent.logging import LogLevel
+    
+    logger.warn("Takeover requested", message=message)
+    # Log a specific event for frontend to show a modal/button
+    logger.log(LogLevel.AGENT, f"Manual Intervention Required: {message}", tag="TAKEOVER")
+    
+    app_state.takeover_confirmed = False
+    
+    # Wait for confirmation
+    while not app_state.takeover_confirmed:
+        # Check if task is cancelled/stopped
+        if app_state.status_agent != "busy":
+            logger.warn("Takeover cancelled because task stopped")
+            break
+        await asyncio.sleep(0.5)
+    
+    if app_state.takeover_confirmed:
+        logger.info("Takeover confirmed by user")
+
+
 def init_agent(use_async: bool = True) -> Optional[str]:
     """
     Initialize or reinitialize the PhoneAgent with active profile.
@@ -39,7 +63,11 @@ def init_agent(use_async: bool = True) -> Optional[str]:
         agent_config = AgentConfig()
         
         if use_async:
-            app_state.agent = AsyncPhoneAgent(model_config, agent_config)
+            app_state.agent = AsyncPhoneAgent(
+                model_config, 
+                agent_config,
+                takeover_callback=web_takeover_callback
+            )
         else:
             app_state.agent = PhoneAgent(model_config, agent_config)
             
@@ -65,6 +93,9 @@ def start_task(task: str) -> tuple[str, Optional[str]]:
         error = init_agent(use_async=True)
         if error:
             return "", error
+    
+    # Clear old logs for new task
+    app_state.json_logs.clear()
     
     task_id = str(uuid.uuid4())
     app_state.current_task_id = task_id

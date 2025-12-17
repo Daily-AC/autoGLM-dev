@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 
 # Ensure modules are accessible
 sys.path.append(os.getcwd())
@@ -55,6 +56,10 @@ async def lifespan(app: FastAPI):
     )
     monitor_thread.start()
     
+    # Inject queue into structured logger
+    from phone_agent.logging import set_global_queue
+    set_global_queue(app_state.log_queue)
+    
     yield
     
     # Cleanup
@@ -65,15 +70,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="web/templates")
 
+# Mount static files (CSS, JS)
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
+
 
 # ============================================================================
 # Page Routes
 # ============================================================================
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    """Serve the main console page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+async def read_root(request: Request, legacy: bool = False):
+    """Serve the main console page.
+    
+    By default, serves the new refactored UI.
+    Add ?legacy=true to use the old UI.
+    """
+    template_name = "index.html" if legacy else "index_new.html"
+    return templates.TemplateResponse(template_name, {"request": request})
 
 
 # ============================================================================
@@ -195,12 +208,27 @@ async def api_takeover_confirm():
 
 @app.get("/api/logs")
 async def get_logs(since: int = 0):
-    """Get logs since the specified cursor position."""
-    current_len = len(app_state.logs)
+    """Get logs since the specified cursor position.
+    
+    This endpoint drains the log_queue (which contains JSON-formatted logs)
+    and stores them in json_logs list for frontend consumption.
+    """
+    # Drain log_queue and append to json_logs
+    while not app_state.log_queue.empty():
+        try:
+            json_log = app_state.log_queue.get_nowait()
+            app_state.json_logs.append(json_log)
+            # Keep list size manageable
+            if len(app_state.json_logs) > 1000:
+                app_state.json_logs.pop(0)
+        except:
+            break
+    
+    current_len = len(app_state.json_logs)
     if since >= current_len:
         return {"logs": [], "next_cursor": current_len}
     return {
-        "logs": app_state.logs[since:],
+        "logs": app_state.json_logs[since:],
         "next_cursor": current_len
     }
 

@@ -70,7 +70,9 @@ class LogEntry:
             details_str = json.dumps(action_data, ensure_ascii=False) if action_data else ""
             return f"{color}[{timestamp}] 🎯 {self.msg}: {details_str}{reset}"
         elif self.tag == "RESULT":
-            return f"{color}[{timestamp}] ✅ {self.msg}{reset}"
+            # Use different emoji for failed vs success
+            emoji = "❌" if "failed" in self.msg.lower() else "✅"
+            return f"{color}[{timestamp}] {emoji} {self.msg}{reset}"
         else:
             return f"{color}[{timestamp}] [{self.level}] [{self.module}] {self.msg}{reset}"
 
@@ -142,12 +144,14 @@ class StructuredLogger:
         )
         
         # Output to terminal
-        try:
-            print(entry.to_console())
-        except Exception:
-            # Fallback if color codes fail
-            sys.__stdout__.write(entry.to_json() + "\n")
-            sys.__stdout__.flush()
+        # Skip console output for high-frequency STREAM tags to avoid clutter
+        if tag != "STREAM":
+            try:
+                print(entry.to_console())
+            except Exception:
+                # Fallback if color codes fail
+                sys.__stdout__.write(entry.to_json() + "\n")
+                sys.__stdout__.flush()
         
         # Output to queue (for web frontend)
         if self.queue:

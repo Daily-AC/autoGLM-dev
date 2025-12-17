@@ -615,8 +615,15 @@ class AsyncActionHandler:
     
     async def _handle_takeover(self, action: dict, width: int, height: int) -> ActionResult:
         """Handle takeover request."""
+        import inspect
+        
         message = action.get("message", "User intervention required")
-        self.takeover_callback(message)
+        
+        if inspect.iscoroutinefunction(self.takeover_callback):
+            await self.takeover_callback(message)
+        else:
+            self.takeover_callback(message)
+            
         return ActionResult(True, False)
     
     async def _handle_note(self, action: dict, width: int, height: int) -> ActionResult:
