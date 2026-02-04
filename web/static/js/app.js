@@ -227,6 +227,154 @@ async function updateServer() {
     renderProfiles();
 }
 
+// ===== 设备管理 =====
+const deviceElements = {
+    get modal() { return document.getElementById('device-modal'); },
+    get list() { return document.getElementById('device-list'); },
+    get addressInput() { return document.getElementById('connect-address'); }
+};
+
+function openDeviceModal() {
+    deviceElements.modal.classList.remove('hidden');
+    refreshDevices();
+}
+
+function closeDeviceModal() {
+    deviceElements.modal.classList.add('hidden');
+}
+
+async function refreshDevices() {
+    const list = deviceElements.list;
+    list.innerHTML = '<div class="text-center py-4 text-gray-500 text-xs"><svg class="animate-spin h-5 w-5 text-gray-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</div>';
+    
+    try {
+        const res = await fetch('/api/devices');
+        const devices = await res.json();
+        renderDevices(devices);
+    } catch (e) {
+        list.innerHTML = `<div class="text-center py-4 text-red-500 text-xs">Error: ${e.message}</div>`;
+    }
+}
+
+function renderDevices(devices) {
+    const list = deviceElements.list;
+    list.innerHTML = '';
+    
+    if (devices.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-gray-500 text-sm">No devices found. Connect via USB or WiFi.</div>';
+        return;
+    }
+    
+    devices.forEach(d => {
+        const item = document.createElement('div');
+        const isSelected = d.selected;
+        
+        item.className = `p-3 rounded-lg border flex items-center justify-between transition group
+            ${isSelected ? 'bg-accent/10 border-accent/30' : 'bg-white/5 border-white/5 hover:bg-white/10'}`;
+            
+        item.innerHTML = `
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded bg-black/30 flex items-center justify-center text-gray-400">
+                    ${d.type === 'usb' 
+                        ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>'
+                        : '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>'
+                    }
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-gray-200 flex items-center gap-2">
+                        ${d.model || 'Unknown Device'}
+                        ${isSelected ? '<span class="text-[10px] bg-accent/20 text-accent px-1.5 py-0.5 rounded uppercase font-bold">Active</span>' : ''}
+                    </div>
+                    <div class="text-[10px] text-gray-500 font-mono">${d.id} • ${d.status}</div>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                ${!isSelected && d.status === 'device' ? `
+                    <button onclick="selectDevice('${d.id}')" class="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded text-white transition">
+                        Select
+                    </button>
+                ` : ''}
+                
+                ${d.type === 'remote' ? `
+                    <button onclick="disconnectDevice('${d.id}')" class="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition" title="Disconnect">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                ` : ''}
+            </div>
+        `;
+        list.appendChild(item);
+    });
+}
+
+async function connectDevice() {
+    const address = deviceElements.addressInput.value.trim();
+    if (!address) return;
+    
+    // Simple optimistic UI
+    const btn = document.querySelector('#device-modal button[onclick="connectDevice()"]');
+    const originalText = btn.innerText;
+    btn.innerText = "Connecting...";
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch('/api/device/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address })
+        });
+        const data = await res.json();
+        
+        if (data.status === 'ok') {
+            deviceElements.addressInput.value = '';
+            refreshDevices();
+        } else {
+            alert("Connection Failed: " + data.message);
+        }
+    } catch (e) {
+        alert("Error: " + e.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function disconnectDevice(address) {
+    if (!confirm(`Disconnect ${address}?`)) return;
+    
+    // Pass raw ID, backend handles port logic if needed
+    // Usually remote ID is IP:PORT
+    const cleanAddress = address.includes(':') ? address : address;
+    
+    try {
+        await fetch('/api/device/disconnect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: cleanAddress })
+        });
+        refreshDevices();
+    } catch (e) {
+        alert(e);
+    }
+}
+
+async function selectDevice(deviceId) {
+    try {
+        await fetch('/api/device/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+        refreshDevices();
+        
+        // Force refresh main UI status
+        setTimeout(checkStatus, 500);
+    } catch (e) {
+        alert(e);
+    }
+}
+
+
 // ===== 任务管理 =====
 async function sendTask() {
     const task = elements.promptInput.value.trim();
@@ -722,6 +870,12 @@ window.closeModal = closeModal;
 window.saveProfile = saveProfile;
 window.deleteProfile = deleteProfile;
 window.activateProfile = activateProfile;
+window.openDeviceModal = openDeviceModal;
+window.closeDeviceModal = closeDeviceModal;
+window.refreshDevices = refreshDevices;
+window.connectDevice = connectDevice;
+window.disconnectDevice = disconnectDevice;
+window.selectDevice = selectDevice;
 window.sendTask = sendTask;
 window.checkStatus = checkStatus;
 window.toggleTerminal = toggleTerminal;

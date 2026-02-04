@@ -35,6 +35,11 @@ from web.control import (
 # Import check functions from main
 from main import check_system_requirements, check_model_api
 
+from phone_agent.adb import ADBConnection
+from pydantic import BaseModel
+
+
+
 
 # ============================================================================
 # Application Lifecycle
@@ -72,6 +77,82 @@ templates = Jinja2Templates(directory="web/templates")
 
 # Mount static files (CSS, JS)
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
+
+
+# ============================================================================
+# Device Management API
+# ============================================================================
+
+class ConnectRequest(BaseModel):
+    address: str
+
+class SelectDeviceRequest(BaseModel):
+    device_id: str
+
+@app.get("/api/devices")
+async def api_list_devices():
+    """List all connected devices."""
+    conn = ADBConnection()
+    devices = conn.list_devices()
+    
+    # Convert to dict list
+    device_list = []
+    for d in devices:
+        item = {
+            "id": d.device_id,
+            "status": d.status,
+            "type": d.connection_type.value,
+            "model": d.model,
+            "selected": d.device_id == app_state.current_device_id
+        }
+        device_list.append(item)
+        
+    # Auto-select first device if none selected and devices exist
+    if not app_state.current_device_id and device_list:
+        # Prefer "device" status
+        ready_devices = [d for d in device_list if d['status'] == 'device']
+        if ready_devices:
+            app_state.current_device_id = ready_devices[0]['id']
+            ready_devices[0]['selected'] = True
+    
+    return device_list
+
+
+@app.post("/api/device/connect")
+async def api_connect_device(req: ConnectRequest):
+    """Connect to a remote device."""
+    conn = ADBConnection()
+    success, msg = conn.connect(req.address)
+    if success:
+        return {"status": "ok", "message": msg}
+    return {"status": "error", "message": msg}
+
+
+@app.post("/api/device/disconnect")
+async def api_disconnect_device(req: ConnectRequest):
+    """Disconnect a remote device."""
+    conn = ADBConnection()
+    success, msg = conn.disconnect(req.address)
+    if success:
+        if app_state.current_device_id == req.address or app_state.current_device_id == f"{req.address}:5555":
+            app_state.current_device_id = None
+        return {"status": "ok", "message": msg}
+    return {"status": "error", "message": msg}
+
+
+@app.post("/api/device/select")
+async def api_select_device(req: SelectDeviceRequest):
+    """Set the active device for the agent."""
+    app_state.current_device_id = req.device_id
+    
+    # If agent is initialized, we might need to re-init or update it
+    # For now, just setting state is enough, it will be used on next task start
+    # But if an agent is IDLE, we can force re-init now to be safe
+    if app_state.status_agent == "idle" or app_state.status_agent == "ready":
+         # Force re-init on next task
+         app_state.agent = None
+         
+    return {"status": "ok", "selected": req.device_id}
 
 
 # ============================================================================

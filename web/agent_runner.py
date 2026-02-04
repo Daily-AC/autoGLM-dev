@@ -60,7 +60,9 @@ def init_agent(use_async: bool = True) -> Optional[str]:
             api_key=profile["api_key"],
             model_name=profile["model"]
         )
-        agent_config = AgentConfig()
+        agent_config = AgentConfig(
+            device_id=app_state.current_device_id
+        )
         
         if use_async:
             app_state.agent = AsyncPhoneAgent(

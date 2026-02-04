@@ -33,7 +33,17 @@ def video_stream_generator() -> Generator[bytes, None, None]:
         yield from _yield_placeholder_frames()
         return
     
-    device_id = devices[0].device_id
+    # Use selected device or fallback to first one
+    device_id = app_state.current_device_id
+    
+    # Verify selected device is still connected
+    if device_id and not any(d.device_id == device_id for d in devices):
+        print(f"Selected device {device_id} lost, falling back to first available.")
+        device_id = None
+        
+    if not device_id:
+        device_id = devices[0].device_id
+        
     adb_prefix = ["adb", "-s", device_id]
     
     print(f"Starting ADB Screencap Stream for {device_id}...")
