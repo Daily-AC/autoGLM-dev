@@ -38,6 +38,9 @@ class AppState:
     # Original screen size (width, height) before resize - needed for accurate coordinate mapping
     original_screen_size: Optional[tuple[int, int]] = None
     
+    # Device State
+    current_device_id: Optional[str] = None
+    
     # Takeover confirmation flag - set to True when user clicks "继续执行" button
     takeover_confirmed: bool = False
 
